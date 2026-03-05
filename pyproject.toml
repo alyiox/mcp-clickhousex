@@ -1,5 +1,5 @@
 [project]
-name = "mcp-clickhouse"
+name = "mcp-clickhousex"
 version = "0.1.0"
 description = "A read-only Model Context Protocol (MCP) server for ClickHouse: metadata discovery, parameterized queries, and execution plan analysis."
 readme = "README.md"
@@ -16,6 +16,9 @@ dev = [
     "anyio",
     "ruff",
 ]
+
+[project.scripts]
+mcp-clickhousex = "mcp_clickhouse.server:main"
 
 [build-system]
 requires = ["hatchling"]

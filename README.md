@@ -9,27 +9,31 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) serv
 Set connection environment variables and run the server:
 
 ```bash
-# Option 1: Run from source (clone repo, then)
+# Option 1: Run directly with uvx (no clone needed)
 export MCP_CLICKHOUSE_HOST=localhost
-export MCP_CLICKHOUSE_PORT=8123
 export MCP_CLICKHOUSE_USER=default
-export MCP_CLICKHOUSE_PASSWORD=""
-export MCP_CLICKHOUSE_DATABASE=default
+uvx mcp-clickhousex
+```
+
+```bash
+# Option 2: Run from source (clone repo, then)
+export MCP_CLICKHOUSE_HOST=localhost
+export MCP_CLICKHOUSE_USER=default
 uv run main.py
 ```
 
 ```bash
-# Option 2: Run with MCP Inspector
+# Option 3: Run with MCP Inspector
 npx -y @modelcontextprotocol/inspector \
   -e MCP_CLICKHOUSE_HOST=localhost \
   -e MCP_CLICKHOUSE_USER=default \
-  uv run main.py
+  uvx mcp-clickhousex
 ```
 
 ```bash
-# Option 3: Use a DSN instead of individual variables
+# Option 4: Use a DSN instead of individual variables
 export MCP_CLICKHOUSE_DSN="http://default:@localhost:8123/default"
-uv run main.py
+uvx mcp-clickhousex
 ```
 
 ## Configuration
