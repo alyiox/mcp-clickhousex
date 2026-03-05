@@ -11,6 +11,11 @@ from mcp_clickhouse import metadata, query
 mcp = FastMCP("mcp-clickhouse", json_response=True)
 
 
+def main() -> None:
+    """CLI entrypoint for ``uvx mcp-clickhouse``."""
+    mcp.run(transport="stdio")
+
+
 @mcp.tool()
 def run_query(
     sql: str,

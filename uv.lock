@@ -440,7 +440,7 @@ cli = [
 ]
 
 [[package]]
-name = "mcp-clickhouse"
+name = "mcp-clickhousex"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
