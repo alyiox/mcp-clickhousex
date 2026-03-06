@@ -55,4 +55,4 @@ include = ["src/", "tests/"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra -q"
-strict-markers = true
+strict_markers = true
