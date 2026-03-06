@@ -75,7 +75,7 @@ Read-only (`SELECT` only); parameterized queries supported (`%(name)s` or `{name
 
 ## MCP host examples
 
-Snippets for common MCP clients. Replace connection details as needed; ensure `uv` is on your PATH.
+Snippets for common MCP clients using `uvx mcp-clickhousex` (no clone required; ensure `uv` is on your PATH). Replace connection details as needed.
 
 ### Cursor
 
@@ -83,9 +83,8 @@ Snippets for common MCP clients. Replace connection details as needed; ensure `u
 {
   "mcpServers": {
     "clickhouse": {
-      "command": "uv",
-      "args": ["run", "main.py"],
-      "cwd": "/path/to/mcp-clickhouse",
+      "command": "uvx",
+      "args": ["mcp-clickhousex"],
       "env": {
         "MCP_CLICKHOUSE_HOST": "localhost",
         "MCP_CLICKHOUSE_USER": "default",
@@ -101,9 +100,9 @@ Snippets for common MCP clients. Replace connection details as needed; ensure `u
 
 ```toml
 [mcp_servers.clickhouse]
-command = "uv"
-args = ["run", "main.py"]
-cwd = "/path/to/mcp-clickhouse"
+command = "uvx"
+args = ["mcp-clickhousex"]
+
 [mcp_servers.clickhouse.env]
 MCP_CLICKHOUSE_HOST = "localhost"
 MCP_CLICKHOUSE_USER = "default"
@@ -120,7 +119,7 @@ MCP_CLICKHOUSE_DATABASE = "default"
     "clickhouse": {
       "type": "local",
       "enabled": true,
-      "command": ["uv", "run", "main.py"],
+      "command": ["uvx", "mcp-clickhousex"],
       "environment": {
         "MCP_CLICKHOUSE_HOST": "localhost",
         "MCP_CLICKHOUSE_USER": "default",
@@ -140,8 +139,8 @@ MCP_CLICKHOUSE_DATABASE = "default"
   "servers": {
     "clickhouse": {
       "type": "stdio",
-      "command": "uv",
-      "args": ["run", "main.py"],
+      "command": "uvx",
+      "args": ["mcp-clickhousex"],
       "env": {
         "MCP_CLICKHOUSE_HOST": "localhost",
         "MCP_CLICKHOUSE_USER": "default",
