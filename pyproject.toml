@@ -3,6 +3,9 @@ name = "mcp-clickhousex"
 version = "0.1.0"
 description = "A read-only Model Context Protocol (MCP) server for ClickHouse: metadata discovery, parameterized queries, and execution plan analysis."
 readme = "README.md"
+authors = [
+    { name = "Jon X", email = "alyiox@hotmail.com" }
+]
 requires-python = ">=3.13"
 dependencies = [
     "clickhouse-connect>=0.13.0",
