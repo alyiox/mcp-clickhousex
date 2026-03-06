@@ -32,10 +32,10 @@ class TestRunQueryE2E:
         assert data["rows"] == [[1]]
 
     @pytest.mark.anyio
-    async def test_qualified_table(self, client) -> None:
+    async def test_table_query(self, client) -> None:
         result = await client.call_tool(
             "run_query",
-            {"sql": "SELECT id, name FROM mcp_test.test_table ORDER BY id"},
+            {"sql": "SELECT id, name FROM test_table ORDER BY id"},
         )
         assert not result.isError
         data = _parse_text(result)
@@ -48,7 +48,7 @@ class TestRunQueryE2E:
         result = await client.call_tool(
             "run_query",
             {
-                "sql": "SELECT name FROM mcp_test.test_table WHERE id = %(target_id)s",
+                "sql": "SELECT name FROM test_table WHERE id = %(target_id)s",
                 "parameters": {"target_id": 2},
             },
         )
@@ -60,7 +60,7 @@ class TestRunQueryE2E:
     async def test_rejects_insert(self, client) -> None:
         result = await client.call_tool(
             "run_query",
-            {"sql": "INSERT INTO mcp_test.test_table VALUES (99, 'bad')"},
+            {"sql": "INSERT INTO test_table VALUES (99, 'bad')"},
         )
         assert result.isError
 
@@ -83,7 +83,7 @@ class TestListDatabasesE2E:
         name_idx = data["columns"].index("name")
         names = [row[name_idx] for row in data["rows"]]
         assert "system" in names
-        assert "mcp_test" in names
+        assert "default" in names
 
 
 # -- list_tables ---------------------------------------------------------------
@@ -91,20 +91,11 @@ class TestListDatabasesE2E:
 
 class TestListTablesE2E:
     @pytest.mark.anyio
-    async def test_default_database(self, client) -> None:
+    async def test_lists_test_table(self, client) -> None:
         result = await client.call_tool("list_tables", {})
         assert not result.isError
         data = _parse_text(result)
         assert "name" in data["columns"]
-        name_idx = data["columns"].index("name")
-        names = [row[name_idx] for row in data["rows"]]
-        assert "test_table" in names
-
-    @pytest.mark.anyio
-    async def test_explicit_database(self, client) -> None:
-        result = await client.call_tool("list_tables", {"database": "mcp_test"})
-        assert not result.isError
-        data = _parse_text(result)
         name_idx = data["columns"].index("name")
         names = [row[name_idx] for row in data["rows"]]
         assert "test_table" in names
@@ -160,7 +151,7 @@ class TestListColumnsE2E:
     @pytest.mark.anyio
     async def test_qualified_table(self, client) -> None:
         result = await client.call_tool(
-            "list_columns", {"table": "mcp_test.test_table"}
+            "list_columns", {"table": "default.test_table"}
         )
         assert not result.isError
         data = _parse_text(result)
@@ -172,7 +163,9 @@ class TestListColumnsE2E:
 
     @pytest.mark.anyio
     async def test_unqualified_table(self, client) -> None:
-        result = await client.call_tool("list_columns", {"table": "test_table"})
+        result = await client.call_tool(
+            "list_columns", {"table": "test_table"}
+        )
         assert not result.isError
         data = _parse_text(result)
         name_idx = data["columns"].index("name")

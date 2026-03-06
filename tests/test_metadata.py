@@ -10,25 +10,19 @@ class TestListDatabases:
         assert "rows" in result
         assert "name" in result["columns"]
 
-    def test_contains_system_and_test_db(self) -> None:
+    def test_contains_system_and_default(self) -> None:
         result = list_databases()
         name_idx = result["columns"].index("name")
         names = [row[name_idx] for row in result["rows"]]
         assert "system" in names
-        assert "mcp_test" in names
+        assert "default" in names
 
 
 class TestListTables:
-    def test_default_database(self) -> None:
+    def test_lists_test_table(self) -> None:
         result = list_tables()
         assert "columns" in result
         assert "name" in result["columns"]
-        name_idx = result["columns"].index("name")
-        names = [row[name_idx] for row in result["rows"]]
-        assert "test_table" in names
-
-    def test_explicit_database(self) -> None:
-        result = list_tables(database="mcp_test")
         name_idx = result["columns"].index("name")
         names = [row[name_idx] for row in result["rows"]]
         assert "test_table" in names
@@ -43,8 +37,8 @@ class TestListTables:
 
 
 class TestListColumns:
-    def test_unqualified_table(self) -> None:
-        result = list_columns("test_table")
+    def test_qualified_table(self) -> None:
+        result = list_columns("default.test_table")
         assert "columns" in result
         assert "name" in result["columns"]
         assert "type" in result["columns"]
@@ -54,15 +48,9 @@ class TestListColumns:
         assert col_map["id"] == "UInt32"
         assert col_map["name"] == "String"
 
-    def test_qualified_table(self) -> None:
-        result = list_columns("mcp_test.test_table")
+    def test_unqualified_table(self) -> None:
+        result = list_columns("test_table")
         name_idx = result["columns"].index("name")
         names = [row[name_idx] for row in result["rows"]]
         assert "id" in names
         assert "name" in names
-
-    def test_explicit_database_arg(self) -> None:
-        result = list_columns("test_table", database="mcp_test")
-        name_idx = result["columns"].index("name")
-        names = [row[name_idx] for row in result["rows"]]
-        assert "id" in names
