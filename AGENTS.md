@@ -26,7 +26,7 @@ The body is optional for trivial changes.
 
 ---
 
-## Commits (automation)
+## Commits
 
 When generating commits via a shell:
 
@@ -51,21 +51,25 @@ Follow existing project conventions.
 
 ### Language-specific rules
 
-* If a formatter or linter exists, follow it
 * Respect `.editorconfig` when present
 * Do not disable lint rules without justification
 * Prefer explicit, readable code over clever abstractions
-
-### C#
-
-* Use trailing commas in multi-line collections, object initializers, and enums
+* Ensure all changes pass `ruff check .`, `ruff format --check .`, `pyright`, and `pytest`
 
 ---
 
-## MCP metadata (normative)
+## `uv` Workflow Rules
+
+* Use `uv` exclusively for dependency management instead of `pip`
+* Always prefix tool and script invocations with `uv run` so they execute inside the managed environment
+* Do not manually create, activate, or delete `.venv` directories
+
+---
+
+## MCP Metadata
 
 Normative, high-density metadata: enough for correct tool and parameter selection, minimal to reduce token cost.
 
-- **The tool/parameter description MUST start with [ClickHouse], followed by a Verb-Object fragment**, e.g. `[ClickHouse] Execute read-only SQL`, `[ClickHouse] List databases`, `[ClickHouse] Describe table`.
-- **Use tag-based lineage (Src: <Entity>) for parameters that refer to ClickHouse entities** (e.g. database name → Src: databases, table name → Src: tables).
+* **The tool/parameter description MUST start with [ClickHouse], followed by a Verb-Object fragment**, e.g. `[ClickHouse] Execute read-only SQL`, `[ClickHouse] List databases`, `[ClickHouse] Describe table`.
+* **Use tag-based lineage (Src: <Entity>) for parameters that refer to ClickHouse entities** (e.g. database name → Src: databases, table name → Src: tables).
 
