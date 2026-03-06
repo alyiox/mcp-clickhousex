@@ -110,6 +110,49 @@ class TestListTablesE2E:
         assert "test_table" in names
 
 
+# -- list_profiles ------------------------------------------------------------
+
+
+class TestListProfilesE2E:
+    @pytest.mark.anyio
+    async def test_returns_profiles(self, client) -> None:
+        result = await client.call_tool("list_profiles", {})
+        assert not result.isError
+        data = _parse_text(result)
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert data[0]["name"] == "default"
+        assert "description" in data[0]
+
+
+# -- get_cluster_properties -----------------------------------------------------
+
+
+class TestGetClusterPropertiesE2E:
+    @pytest.mark.anyio
+    async def test_returns_version_and_limits(self, client) -> None:
+        result = await client.call_tool("get_cluster_properties", {})
+        assert not result.isError
+        data = _parse_text(result)
+        assert "version" in data
+        assert "limits" in data
+        assert "query" in data["limits"]
+        q = data["limits"]["query"]
+        assert "max_rows" in q
+        assert "hard_row_limit" in q
+        assert "command_timeout_seconds" in q
+
+    @pytest.mark.anyio
+    async def test_accepts_profile_param(self, client) -> None:
+        result = await client.call_tool(
+            "get_cluster_properties", {"profile": "default"}
+        )
+        assert not result.isError
+        data = _parse_text(result)
+        assert "version" in data
+        assert "limits" in data
+
+
 # -- list_columns --------------------------------------------------------------
 
 

@@ -7,6 +7,10 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from mcp_clickhousex import metadata, query
+from mcp_clickhousex.cluster_properties import (
+    get_cluster_properties as get_cluster_properties_impl,
+)
+from mcp_clickhousex.config import get_profiles
 
 mcp = FastMCP("mcp-clickhouse", json_response=True)
 
@@ -17,16 +21,34 @@ def main() -> None:
 
 
 @mcp.tool()
+def list_profiles() -> list[dict[str, Any]]:
+    """[ClickHouse] List configured profiles."""
+    return get_profiles()
+
+
+@mcp.tool()
+def get_cluster_properties(profile: str | None = None) -> dict[str, Any]:
+    """[ClickHouse] Get cluster properties and execution limits.
+
+    profile: Optional. Profile name. Src: profiles.
+    """
+    return get_cluster_properties_impl(profile)
+
+
+@mcp.tool()
 def run_query(
     sql: str,
     parameters: dict[str, Any] | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     """Execute a read-only SELECT against ClickHouse and return columns and rows.
 
     Database and table must be specified in the SQL text
-    (e.g. ``SELECT * FROM mydb.mytable``).
+    (e.g. ``SELECT * FROM mydb.mytable``). Applies the profile's max_rows limit.
+
+    profile: Optional. Profile name. Src: profiles.
     """
-    return query.run_query(sql, parameters=parameters)
+    return query.run_query(sql, parameters=parameters, profile=profile)
 
 
 @mcp.tool()

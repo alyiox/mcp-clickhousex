@@ -1,5 +1,7 @@
 """Functional tests for mcp_clickhousex.query.run_query."""
 
+import os
+
 import pytest
 
 from mcp_clickhousex.query import run_query
@@ -47,3 +49,17 @@ class TestRunQuery:
     def test_rejects_multiple_statements(self) -> None:
         with pytest.raises(ValueError, match="Multiple"):
             run_query("SELECT 1; SELECT 2")
+
+    def test_max_rows_applied(self) -> None:
+        """run_query applies profile max_rows; result has at most max_rows rows."""
+        old = os.environ.get("MCP_CLICKHOUSE_QUERY_MAX_ROWS")
+        try:
+            os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = "2"
+            result = run_query("SELECT number AS n FROM system.numbers LIMIT 5")
+            assert result["columns"] == ["n"]
+            assert len(result["rows"]) <= 2
+        finally:
+            if old is None:
+                os.environ.pop("MCP_CLICKHOUSE_QUERY_MAX_ROWS", None)
+            else:
+                os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = old

@@ -38,7 +38,7 @@ uvx mcp-clickhousex
 
 ## Configuration
 
-Connection is configured entirely through environment variables. No config files or profiles in the current version.
+Connection and behavior are configured via environment variables.
 
 **DSN (preferred for single-line config):**
 
@@ -46,26 +46,40 @@ Connection is configured entirely through environment variables. No config files
 export MCP_CLICKHOUSE_DSN="http://user:password@host:8123/database"
 ```
 
-**Individual variables (used when `MCP_CLICKHOUSE_DSN` is not set):**
+**Individual connection variables (used when `MCP_CLICKHOUSE_DSN` is not set):**
 
 ```bash
 export MCP_CLICKHOUSE_HOST="localhost"      # default: localhost
 export MCP_CLICKHOUSE_PORT="8123"           # default: 8123
 export MCP_CLICKHOUSE_USER="default"        # default: default
-export MCP_CLICKHOUSE_PASSWORD=""            # default: (empty)
+export MCP_CLICKHOUSE_PASSWORD=""           # default: (empty)
 export MCP_CLICKHOUSE_DATABASE="default"    # default: default
 ```
+
+**Profiles:** The single cluster is the **default** profile; no explicit profile name is required. Profiles are derived from configuration (no `MCP_CLICKHOUSE_PROFILES`). Flat env vars below override the default profile only. Tools that accept a `profile` argument use the default when omitted.
+
+**Default profile overrides (optional):**
+
+```bash
+export MCP_CLICKHOUSE_DESCRIPTION="Main cluster"              # optional description for list_profiles
+export MCP_CLICKHOUSE_QUERY_MAX_ROWS="5000"                  # default: 5000 (capped at 50000)
+export MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS="30"     # default: 30 (capped at 300)
+```
+
+Max rows is applied to every query (server-side via `max_result_rows`); results may be truncated with a `truncated` and `row_limit` field in the response.
 
 ## Tools
 
 | Tool | Description | Key params |
 |---|---|---|
-| **`run_query`** | Execute a read-only SELECT and return tabular results. Database/table must be specified in the SQL (e.g. `db.table`). | `sql`, `parameters` |
+| **`list_profiles`** | List configured profiles (name and optional description). | — |
+| **`get_cluster_properties`** | Get cluster (node) version and execution limits for a profile. | `profile` (optional) |
+| **`run_query`** | Execute a read-only SELECT and return tabular results. Database/table must be specified in the SQL (e.g. `db.table`). Applies the profile's max_rows limit. | `sql`, `parameters`, `profile` (optional) |
 | **`list_databases`** | List all databases (from `system.databases`). | — |
 | **`list_tables`** | List tables and views in a database (from `system.tables`). | `database` |
 | **`list_columns`** | List columns for a table or view (from `system.columns`). Table may be qualified as `database.table`. | `table`, `database` |
 
-All tools return JSON with `columns` (list of column names) and `rows` (list of value arrays).
+Query tools (`run_query`, `list_databases`, `list_tables`, `list_columns`) return JSON with `columns` (list of column names) and `rows` (list of value arrays). `run_query` may include `truncated` and `row_limit` when the result was capped. `list_profiles` returns a list of `{ name, description }`. `get_cluster_properties` returns `{ version, limits }` where `limits.query` includes `max_rows`, `hard_row_limit`, and `command_timeout_seconds`.
 
 **`run_query`** validates that the SQL is a single, read-only `SELECT` (or `WITH … SELECT`). INSERT, UPDATE, DELETE, DDL, and multi-statement batches are rejected.
 
@@ -167,9 +181,6 @@ Connection defaults for tests are in `tests/conftest.py` (localhost:8123, user `
 
 ## Roadmap
 
-- Row limits and truncation
-- Query timeouts
-- Profile-based config (multiple connections)
 - Execution plan analysis (`analyze_query`)
 
 ## Contributing
