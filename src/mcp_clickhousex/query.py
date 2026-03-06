@@ -23,7 +23,7 @@ def run_query(
 
     client = get_client(profile)
     max_rows = get_max_rows(profile)
-    settings = {"max_result_rows": max_rows}
+    settings = {"max_result_rows": max_rows, "result_overflow_mode": "break"}
 
     result = client.query(sql, parameters=parameters, settings=settings)
 
