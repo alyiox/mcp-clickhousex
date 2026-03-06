@@ -41,11 +41,13 @@ def run_query(
     parameters: dict[str, Any] | None = None,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """Execute a read-only SELECT against ClickHouse and return columns and rows.
+    """[ClickHouse] Execute read-only SQL and return columns and rows.
 
     Database and table must be specified in the SQL text
-    (e.g. ``SELECT * FROM mydb.mytable``). Applies the profile's max_rows limit.
+    (e.g. ``SELECT * FROM mydb.mytable``).
 
+    sql: Read-only SELECT statement.
+    parameters: Optional. Query parameter values keyed by name.
     profile: Optional. Profile name. Src: profiles.
     """
     return query.run_query(sql, parameters=parameters, profile=profile)
@@ -53,23 +55,24 @@ def run_query(
 
 @mcp.tool()
 def list_databases() -> dict[str, Any]:
-    """List all ClickHouse databases (from system.databases)."""
+    """[ClickHouse] List databases (from system.databases)."""
     return metadata.list_databases()
 
 
 @mcp.tool()
 def list_tables(database: str | None = None) -> dict[str, Any]:
-    """List tables and views in a database (from system.tables).
+    """[ClickHouse] List tables and views in a database (from system.tables).
 
-    If *database* is omitted the connection's default database is used.
+    database: Optional. Database name. Src: databases.
     """
     return metadata.list_tables(database)
 
 
 @mcp.tool()
 def list_columns(table: str, database: str | None = None) -> dict[str, Any]:
-    """List columns for a table or view (from system.columns).
+    """[ClickHouse] List columns for a table or view (from system.columns).
 
-    *table* may be qualified as ``database.table``.
+    table: Table name; may be qualified as ``database.table``. Src: tables.
+    database: Optional. Database name. Src: databases.
     """
     return metadata.list_columns(table, database)
