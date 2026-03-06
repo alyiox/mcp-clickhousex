@@ -9,17 +9,17 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "clickhouse-connect>=0.13.0",
-    "mcp[cli]",
+    "mcp[cli]>=1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
-    "pytest-cov",
-    "anyio",
-    "ruff",
-    "pyright",
-    "pre-commit",
+    "pytest-cov>=6.0",
+    "anyio>=4.0",
+    "ruff>=0.15",
+    "pyright>=1.1",
+    "pre-commit>=4.0",
 ]
 
 [project.scripts]
