@@ -6,25 +6,18 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) serv
 
 ## Quick start
 
-Set a DSN and run the server:
+Set a DSN and run the server with MCP Inspector:
 
 ```bash
 # Option 1: Run directly with uvx (no clone needed)
 export MCP_CLICKHOUSE_DSN="http://default:@localhost:8123/default"
-uvx mcp-clickhousex
+npx -y @modelcontextprotocol/inspector uvx mcp-clickhousex
 ```
 
 ```bash
 # Option 2: Run from source (clone repo, then)
 export MCP_CLICKHOUSE_DSN="http://default:@localhost:8123/default"
-uv run main.py
-```
-
-```bash
-# Option 3: Run with MCP Inspector
-npx -y @modelcontextprotocol/inspector \
-  -e MCP_CLICKHOUSE_DSN="http://default:@localhost:8123/default" \
-  uvx mcp-clickhousex
+npx -y @modelcontextprotocol/inspector uv run main.py
 ```
 
 ## Configuration
