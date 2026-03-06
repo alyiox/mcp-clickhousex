@@ -4,6 +4,7 @@ import os
 
 import pytest
 
+from mcp_clickhousex.config import reset_registry
 from mcp_clickhousex.query import run_query
 
 
@@ -55,6 +56,7 @@ class TestRunQuery:
         old = os.environ.get("MCP_CLICKHOUSE_QUERY_MAX_ROWS")
         try:
             os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = "2"
+            reset_registry()
             result = run_query("SELECT number AS n FROM system.numbers LIMIT 5")
             assert result["columns"] == ["n"]
             assert len(result["rows"]) <= 2
@@ -63,3 +65,4 @@ class TestRunQuery:
                 os.environ.pop("MCP_CLICKHOUSE_QUERY_MAX_ROWS", None)
             else:
                 os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = old
+            reset_registry()

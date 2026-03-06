@@ -6,65 +6,70 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) serv
 
 ## Quick start
 
-Set connection environment variables and run the server:
+Set a DSN and run the server:
 
 ```bash
 # Option 1: Run directly with uvx (no clone needed)
-export MCP_CLICKHOUSE_HOST=localhost
-export MCP_CLICKHOUSE_USER=default
+export MCP_CLICKHOUSE_DSN="http://default:@localhost:8123/default"
 uvx mcp-clickhousex
 ```
 
 ```bash
 # Option 2: Run from source (clone repo, then)
-export MCP_CLICKHOUSE_HOST=localhost
-export MCP_CLICKHOUSE_USER=default
+export MCP_CLICKHOUSE_DSN="http://default:@localhost:8123/default"
 uv run main.py
 ```
 
 ```bash
 # Option 3: Run with MCP Inspector
 npx -y @modelcontextprotocol/inspector \
-  -e MCP_CLICKHOUSE_HOST=localhost \
-  -e MCP_CLICKHOUSE_USER=default \
+  -e MCP_CLICKHOUSE_DSN="http://default:@localhost:8123/default" \
   uvx mcp-clickhousex
-```
-
-```bash
-# Option 4: Use a DSN instead of individual variables
-export MCP_CLICKHOUSE_DSN="http://default:@localhost:8123/default"
-uvx mcp-clickhousex
 ```
 
 ## Configuration
 
-Connection and behavior are configured via environment variables.
+Connection and behavior are configured via environment variables. The server supports multiple named profiles and a backward-compatible flat layer for single-connection setups.
 
-**DSN (preferred for single-line config):**
+### Single connection (flat env vars)
+
+Flat vars create or override the **default** profile. This is all you need for a single ClickHouse instance:
 
 ```bash
 export MCP_CLICKHOUSE_DSN="http://user:password@host:8123/database"
+export MCP_CLICKHOUSE_DESCRIPTION="Primary cluster"                   # optional
+export MCP_CLICKHOUSE_QUERY_MAX_ROWS="5000"                          # default: 5000 (capped at 50000)
+export MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS="30"             # default: 30 (capped at 300)
 ```
 
-**Individual connection variables (used when `MCP_CLICKHOUSE_DSN` is not set):**
+### Multiple profiles (structured env vars)
+
+To connect to more than one ClickHouse instance, use the `MCP_CLICKHOUSE_PROFILES_<NAME>_` prefix. Profile names must be alphanumeric (no underscores) and are case-insensitive.
 
 ```bash
-export MCP_CLICKHOUSE_HOST="localhost"      # default: localhost
-export MCP_CLICKHOUSE_PORT="8123"           # default: 8123
-export MCP_CLICKHOUSE_USER="default"        # default: default
-export MCP_CLICKHOUSE_PASSWORD=""           # default: (empty)
-export MCP_CLICKHOUSE_DATABASE="default"    # default: default
+# Default profile
+export MCP_CLICKHOUSE_PROFILES_DEFAULT_DSN="http://user:pass@primary:8123/mydb"
+export MCP_CLICKHOUSE_PROFILES_DEFAULT_DESCRIPTION="Primary cluster"
+export MCP_CLICKHOUSE_PROFILES_DEFAULT_QUERY_MAX_ROWS="5000"
+export MCP_CLICKHOUSE_PROFILES_DEFAULT_QUERY_COMMAND_TIMEOUT_SECONDS="60"
+
+# Named profile
+export MCP_CLICKHOUSE_PROFILES_WAREHOUSE_DSN="http://user:pass@warehouse:8123/analytics"
+export MCP_CLICKHOUSE_PROFILES_WAREHOUSE_DESCRIPTION="Analytics warehouse"
+export MCP_CLICKHOUSE_PROFILES_WAREHOUSE_QUERY_MAX_ROWS="10000"
+export MCP_CLICKHOUSE_PROFILES_WAREHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS="120"
 ```
 
-**Profiles:** The single cluster is the **default** profile; no explicit profile name is required. Profiles are derived from configuration (no `MCP_CLICKHOUSE_PROFILES`). Flat env vars below override the default profile only. Tools that accept a `profile` argument use the default when omitted.
+**Per-profile fields:**
 
-**Default profile overrides (optional):**
+| Suffix | Description | Default |
+|---|---|---|
+| `DSN` | Connection DSN (required) | `http://default:@localhost:8123/default` |
+| `DESCRIPTION` | Human-readable label | — |
+| `QUERY_MAX_ROWS` | Row cap per query | 5000 (max 50000) |
+| `QUERY_COMMAND_TIMEOUT_SECONDS` | Query timeout | 30 (max 300) |
 
-```bash
-export MCP_CLICKHOUSE_DESCRIPTION="Main cluster"              # optional description for list_profiles
-export MCP_CLICKHOUSE_QUERY_MAX_ROWS="5000"                  # default: 5000 (capped at 50000)
-export MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS="30"     # default: 30 (capped at 300)
-```
+**Merge rule:** Flat vars always feed into the `default` profile. If both `MCP_CLICKHOUSE_PROFILES_DEFAULT_*` and flat vars are set, flat vars win on conflict.
 
 Max rows is applied to every query (server-side via `max_result_rows`); results may be truncated with a `truncated` and `row_limit` field in the response.
 
@@ -75,9 +80,9 @@ Max rows is applied to every query (server-side via `max_result_rows`); results 
 | **`list_profiles`** | List configured profiles (name and optional description). | — |
 | **`get_cluster_properties`** | Get cluster (node) version and execution limits for a profile. | `profile` (optional) |
 | **`run_query`** | Execute a read-only SELECT and return tabular results. Database/table must be specified in the SQL (e.g. `db.table`). Applies the profile's max_rows limit. | `sql`, `parameters`, `profile` (optional) |
-| **`list_databases`** | List all databases (from `system.databases`). | — |
-| **`list_tables`** | List tables and views in a database (from `system.tables`). | `database` |
-| **`list_columns`** | List columns for a table or view (from `system.columns`). Table may be qualified as `database.table`. | `table`, `database` |
+| **`list_databases`** | List all databases (from `system.databases`). | `profile` (optional) |
+| **`list_tables`** | List tables and views in a database (from `system.tables`). | `database`, `profile` (optional) |
+| **`list_columns`** | List columns for a table or view (from `system.columns`). Table may be qualified as `database.table`. | `table`, `database`, `profile` (optional) |
 
 Query tools (`run_query`, `list_databases`, `list_tables`, `list_columns`) return JSON with `columns` (list of column names) and `rows` (list of value arrays). `run_query` may include `truncated` and `row_limit` when the result was capped. `list_profiles` returns a list of `{ name, description }`. `get_cluster_properties` returns `{ version, limits }` where `limits.query` includes `max_rows`, `hard_row_limit`, and `command_timeout_seconds`.
 
@@ -100,10 +105,7 @@ Snippets for common MCP clients using `uvx mcp-clickhousex` (no clone required; 
       "command": "uvx",
       "args": ["mcp-clickhousex"],
       "env": {
-        "MCP_CLICKHOUSE_HOST": "localhost",
-        "MCP_CLICKHOUSE_USER": "default",
-        "MCP_CLICKHOUSE_PASSWORD": "",
-        "MCP_CLICKHOUSE_DATABASE": "default"
+        "MCP_CLICKHOUSE_DSN": "http://default:@localhost:8123/default"
       }
     }
   }
@@ -118,10 +120,7 @@ command = "uvx"
 args = ["mcp-clickhousex"]
 
 [mcp_servers.clickhouse.env]
-MCP_CLICKHOUSE_HOST = "localhost"
-MCP_CLICKHOUSE_USER = "default"
-MCP_CLICKHOUSE_PASSWORD = ""
-MCP_CLICKHOUSE_DATABASE = "default"
+MCP_CLICKHOUSE_DSN = "http://default:@localhost:8123/default"
 ```
 
 ### OpenCode
@@ -135,10 +134,7 @@ MCP_CLICKHOUSE_DATABASE = "default"
       "enabled": true,
       "command": ["uvx", "mcp-clickhousex"],
       "environment": {
-        "MCP_CLICKHOUSE_HOST": "localhost",
-        "MCP_CLICKHOUSE_USER": "default",
-        "MCP_CLICKHOUSE_PASSWORD": "",
-        "MCP_CLICKHOUSE_DATABASE": "default"
+        "MCP_CLICKHOUSE_DSN": "http://default:@localhost:8123/default"
       }
     }
   }
@@ -156,10 +152,7 @@ MCP_CLICKHOUSE_DATABASE = "default"
       "command": "uvx",
       "args": ["mcp-clickhousex"],
       "env": {
-        "MCP_CLICKHOUSE_HOST": "localhost",
-        "MCP_CLICKHOUSE_USER": "default",
-        "MCP_CLICKHOUSE_PASSWORD": "",
-        "MCP_CLICKHOUSE_DATABASE": "default"
+        "MCP_CLICKHOUSE_DSN": "http://default:@localhost:8123/default"
       }
     }
   }
@@ -170,14 +163,19 @@ MCP_CLICKHOUSE_DATABASE = "default"
 
 ## Tests
 
-Tests require a running ClickHouse instance. The test suite creates a `mcp_test` database, seeds it, and drops it after.
+Tests require a running ClickHouse instance. The test suite creates a sample table in the default database, seeds it, and drops it after.
 
 ```bash
 # Run all tests (unit + functional + e2e)
 uv run pytest tests/ -v
 ```
 
-Connection defaults for tests are in `tests/conftest.py` (localhost:8123, user `admin`, password `password123`). Override by editing the fixture or setting the `MCP_CLICKHOUSE_*` environment variables before the test session.
+The test harness uses `MCP_TEST_CLICKHOUSE_DSN` to locate the ClickHouse instance. If unset, it falls back to `http://admin:password123@localhost:8123/default`. Set the variable to point tests at a different server without affecting your production `MCP_CLICKHOUSE_DSN`:
+
+```bash
+export MCP_TEST_CLICKHOUSE_DSN="http://user:pass@testhost:8123/default"
+uv run pytest tests/ -v
+```
 
 ## Roadmap
 

@@ -28,7 +28,7 @@ def _bootstrap_test_db(ch_client):
         "(id UInt32, name String) ENGINE = MergeTree() ORDER BY id"
     )
     ch_client.command(
-        "INSERT INTO test_table VALUES " "(1, 'alice'), (2, 'bob'), (3, 'charlie')"
+        "INSERT INTO test_table VALUES (1, 'alice'), (2, 'bob'), (3, 'charlie')"
     )
     yield
     ch_client.command("DROP TABLE IF EXISTS test_table")

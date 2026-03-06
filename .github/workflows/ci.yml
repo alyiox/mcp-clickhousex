@@ -63,6 +63,8 @@ jobs:
         run: uv run pyright
 
       - name: Test
+        env:
+          MCP_TEST_CLICKHOUSE_DSN: "http://admin:password123@localhost:8123/default"
         run: uv run pytest tests/ -v --tb=short
 
       - name: Build package

@@ -18,31 +18,39 @@ def _load_sql(name: str) -> str:
     return ref.read_text(encoding="utf-8")
 
 
-def _query(sql: str, parameters: dict[str, Any] | None = None) -> dict[str, Any]:
+def _query(
+    sql: str,
+    parameters: dict[str, Any] | None = None,
+    profile: str | None = None,
+) -> dict[str, Any]:
     """Execute a read-only metadata query and return ``{columns, rows}``."""
-    client = get_client()
+    client = get_client(profile)
     result = client.query(sql, parameters=parameters)
     columns = list(result.column_names)
     rows = [list(row) for row in result.result_rows]
     return {"columns": columns, "rows": rows}
 
 
-def list_databases() -> dict[str, Any]:
+def list_databases(profile: str | None = None) -> dict[str, Any]:
     """Return all databases from ``system.databases``."""
     sql = _load_sql("databases.sql")
-    return _query(sql)
+    return _query(sql, profile=profile)
 
 
-def list_tables(database: str | None = None) -> dict[str, Any]:
+def list_tables(
+    database: str | None = None, profile: str | None = None
+) -> dict[str, Any]:
     """Return tables/views in *database* from ``system.tables``."""
     if not database:
-        client = get_client()
+        client = get_client(profile)
         database = client.database or "default"
     sql = _load_sql("tables.sql")
-    return _query(sql, parameters={"database": database})
+    return _query(sql, parameters={"database": database}, profile=profile)
 
 
-def list_columns(table: str, database: str | None = None) -> dict[str, Any]:
+def list_columns(
+    table: str, database: str | None = None, profile: str | None = None
+) -> dict[str, Any]:
     """Return columns for *table* from ``system.columns``.
 
     *table* may be qualified as ``database.table``; if so the
@@ -51,7 +59,9 @@ def list_columns(table: str, database: str | None = None) -> dict[str, Any]:
     if "." in table:
         database, table = table.split(".", 1)
     elif not database:
-        client = get_client()
+        client = get_client(profile)
         database = client.database or "default"
     sql = _load_sql("columns.sql")
-    return _query(sql, parameters={"database": database, "table": table})
+    return _query(
+        sql, parameters={"database": database, "table": table}, profile=profile
+    )

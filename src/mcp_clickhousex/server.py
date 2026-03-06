@@ -54,25 +54,34 @@ def run_query(
 
 
 @mcp.tool()
-def list_databases() -> dict[str, Any]:
-    """[ClickHouse] List databases (from system.databases)."""
-    return metadata.list_databases()
+def list_databases(profile: str | None = None) -> dict[str, Any]:
+    """[ClickHouse] List databases (from system.databases).
+
+    profile: Optional. Profile name. Src: profiles.
+    """
+    return metadata.list_databases(profile=profile)
 
 
 @mcp.tool()
-def list_tables(database: str | None = None) -> dict[str, Any]:
+def list_tables(
+    database: str | None = None, profile: str | None = None
+) -> dict[str, Any]:
     """[ClickHouse] List tables and views in a database (from system.tables).
 
     database: Optional. Database name. Src: databases.
+    profile: Optional. Profile name. Src: profiles.
     """
-    return metadata.list_tables(database)
+    return metadata.list_tables(database, profile=profile)
 
 
 @mcp.tool()
-def list_columns(table: str, database: str | None = None) -> dict[str, Any]:
+def list_columns(
+    table: str, database: str | None = None, profile: str | None = None
+) -> dict[str, Any]:
     """[ClickHouse] List columns for a table or view (from system.columns).
 
     table: Table name; may be qualified as ``database.table``. Src: tables.
     database: Optional. Database name. Src: databases.
+    profile: Optional. Profile name. Src: profiles.
     """
-    return metadata.list_columns(table, database)
+    return metadata.list_columns(table, database, profile=profile)

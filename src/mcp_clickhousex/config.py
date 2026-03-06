@@ -1,13 +1,33 @@
 """Environment-based ClickHouse connection configuration.
 
-Profiles are derived from configuration: the single cluster is the default
-profile (flat env vars). Flat env vars override the default profile only.
-No MCP_CLICKHOUSE_PROFILES; profile list is implicit.
+Supports multiple named profiles via structured env vars and a
+backward-compatible flat env layer that creates/overrides the default
+profile.
+
+Structured (named profiles)::
+
+    MCP_CLICKHOUSE_PROFILES_<NAME>_DSN=clickhouse://...
+    MCP_CLICKHOUSE_PROFILES_<NAME>_DESCRIPTION=...
+    MCP_CLICKHOUSE_PROFILES_<NAME>_QUERY_MAX_ROWS=5000
+    MCP_CLICKHOUSE_PROFILES_<NAME>_QUERY_COMMAND_TIMEOUT_SECONDS=60
+
+Flat (default profile only, backward compatible)::
+
+    MCP_CLICKHOUSE_DSN=clickhouse://...
+    MCP_CLICKHOUSE_DESCRIPTION=...
+    MCP_CLICKHOUSE_QUERY_MAX_ROWS=5000
+    MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS=60
+
+Flat vars always win over structured vars for the default profile.
+Profile names are case-insensitive and must be alphanumeric (no
+underscores).
 """
 
 from __future__ import annotations
 
 import os
+import re
+from dataclasses import dataclass, field
 from typing import Any
 
 import clickhouse_connect
@@ -15,85 +35,196 @@ from clickhouse_connect.driver.client import Client
 
 DEFAULT_PROFILE_NAME = "default"
 
-# Hard safety limits (not configurable).
 HARD_ROW_LIMIT = 50_000
 HARD_COMMAND_TIMEOUT_SECONDS = 300
 
-# Flat env keys that override the default profile only.
-_ENV_DSN = "MCP_CLICKHOUSE_DSN"
-_ENV_HOST = "MCP_CLICKHOUSE_HOST"
-_ENV_PORT = "MCP_CLICKHOUSE_PORT"
-_ENV_USER = "MCP_CLICKHOUSE_USER"
-_ENV_PASSWORD = "MCP_CLICKHOUSE_PASSWORD"
-_ENV_DATABASE = "MCP_CLICKHOUSE_DATABASE"
-_ENV_DESCRIPTION = "MCP_CLICKHOUSE_DESCRIPTION"
-_ENV_QUERY_MAX_ROWS = "MCP_CLICKHOUSE_QUERY_MAX_ROWS"
-_ENV_QUERY_COMMAND_TIMEOUT_SECONDS = "MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS"
+_DEFAULT_DSN = "http://default:@localhost:8123/default"
+_DEFAULT_QUERY_MAX_ROWS = 5_000
+_DEFAULT_QUERY_COMMAND_TIMEOUT_SECONDS = 30
+
+_STRUCTURED_PREFIX = "MCP_CLICKHOUSE_PROFILES_"
+
+_FLAT_MAP: dict[str, str] = {
+    "MCP_CLICKHOUSE_DSN": "dsn",
+    "MCP_CLICKHOUSE_DESCRIPTION": "description",
+    "MCP_CLICKHOUSE_QUERY_MAX_ROWS": "query_max_rows",
+    "MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS": "query_command_timeout_seconds",
+}
+
+_KNOWN_SUFFIXES: tuple[tuple[str, str], ...] = (
+    ("QUERY_COMMAND_TIMEOUT_SECONDS", "query_command_timeout_seconds"),
+    ("QUERY_MAX_ROWS", "query_max_rows"),
+    ("DESCRIPTION", "description"),
+    ("DSN", "dsn"),
+)
+
+_PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9]+$")
+
+
+@dataclass
+class _ProfileData:
+    dsn: str | None = None
+    description: str | None = None
+    query_max_rows: int = _DEFAULT_QUERY_MAX_ROWS
+    query_command_timeout_seconds: int = _DEFAULT_QUERY_COMMAND_TIMEOUT_SECONDS
+
+
+@dataclass
+class _Registry:
+    profiles: dict[str, _ProfileData] = field(default_factory=dict)
+
+
+_registry: _Registry | None = None
+
+
+def _parse_structured_profiles() -> dict[str, dict[str, str]]:
+    """Scan env for ``MCP_CLICKHOUSE_PROFILES_<NAME>_<FIELD>`` keys."""
+    result: dict[str, dict[str, str]] = {}
+    for key, value in os.environ.items():
+        if not key.startswith(_STRUCTURED_PREFIX):
+            continue
+        remainder = key[len(_STRUCTURED_PREFIX) :]
+        name, field_key = _split_profile_remainder(remainder)
+        if name is None:
+            continue
+        result.setdefault(name, {})[field_key] = value
+    return result
+
+
+def _split_profile_remainder(remainder: str) -> tuple[str | None, str]:
+    """Extract (profile_name, field_key) from the portion after the prefix.
+
+    Tries each known suffix longest-first so that multi-word suffixes
+    like ``QUERY_COMMAND_TIMEOUT_SECONDS`` are matched before shorter
+    ones.  Returns ``(None, "")`` when the remainder is not parseable.
+    """
+    for suffix, field_key in _KNOWN_SUFFIXES:
+        if remainder.endswith("_" + suffix):
+            name = remainder[: -(len(suffix) + 1)]
+            if _PROFILE_NAME_RE.fullmatch(name):
+                return name.lower(), field_key
+    return None, ""
+
+
+def _build_default_from_flat() -> dict[str, str]:
+    """Read flat ``MCP_CLICKHOUSE_*`` vars into profile-field dict."""
+    result: dict[str, str] = {}
+    for env_key, field_key in _FLAT_MAP.items():
+        value = os.environ.get(env_key)
+        if value is not None:
+            result[field_key] = value
+    return result
+
+
+def _materialize(raw: dict[str, str]) -> _ProfileData:
+    """Convert a raw ``{field_key: str_value}`` dict into a ``_ProfileData``."""
+    data = _ProfileData()
+    if "dsn" in raw:
+        data.dsn = raw["dsn"]
+    desc = raw.get("description", "")
+    data.description = desc.strip() if desc and desc.strip() else None
+    if "query_max_rows" in raw:
+        data.query_max_rows = _clamp_int(
+            raw["query_max_rows"], _DEFAULT_QUERY_MAX_ROWS, HARD_ROW_LIMIT
+        )
+    if "query_command_timeout_seconds" in raw:
+        data.query_command_timeout_seconds = _clamp_int(
+            raw["query_command_timeout_seconds"],
+            _DEFAULT_QUERY_COMMAND_TIMEOUT_SECONDS,
+            HARD_COMMAND_TIMEOUT_SECONDS,
+        )
+    return data
+
+
+def _clamp_int(raw: str, default: int, max_val: int) -> int:
+    try:
+        return min(int(raw), max_val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _resolve_profiles() -> _Registry:
+    """Merge structured + flat env vars into a registry (cached)."""
+    structured = _parse_structured_profiles()
+    flat = _build_default_from_flat()
+
+    merged: dict[str, dict[str, str]] = {}
+    for name, fields in structured.items():
+        merged[name] = dict(fields)
+
+    if flat:
+        default_raw = merged.get(DEFAULT_PROFILE_NAME, {})
+        default_raw.update(flat)
+        merged[DEFAULT_PROFILE_NAME] = default_raw
+
+    if not merged:
+        merged[DEFAULT_PROFILE_NAME] = {"dsn": _DEFAULT_DSN}
+
+    registry = _Registry()
+    for name, raw in merged.items():
+        registry.profiles[name] = _materialize(raw)
+    return registry
+
+
+def _get_registry() -> _Registry:
+    global _registry  # noqa: PLW0603
+    if _registry is None:
+        _registry = _resolve_profiles()
+    return _registry
+
+
+def reset_registry() -> None:
+    """Drop cached profiles so the next access re-reads env vars.
+
+    Intended for tests only.
+    """
+    global _registry  # noqa: PLW0603
+    _registry = None
+
+
+def _lookup(profile: str | None) -> tuple[str, _ProfileData]:
+    """Return ``(name, data)`` for a profile, raising on unknown names."""
+    name = (profile or "").strip().lower() or DEFAULT_PROFILE_NAME
+    reg = _get_registry()
+    data = reg.profiles.get(name)
+    if data is None:
+        available = ", ".join(sorted(reg.profiles))
+        raise ValueError(
+            f"MCP ClickHouse profile '{name}' was not found. "
+            f"Available profiles: {available}"
+        )
+    return name, data
+
+
+# -- Public API ----------------------------------------------------------------
 
 
 def get_profiles() -> list[dict[str, Any]]:
-    """Return configured profiles derived from configuration.
-
-    Single cluster: one profile "default" with description from
-    MCP_CLICKHOUSE_DESCRIPTION (flat env = default profile only).
-    """
-    desc = os.environ.get(_ENV_DESCRIPTION)
-    description = desc.strip() if desc and desc.strip() else None
-    return [{"name": DEFAULT_PROFILE_NAME, "description": description}]
+    """Return all configured profiles with name and description."""
+    reg = _get_registry()
+    return [
+        {"name": name, "description": data.description}
+        for name, data in reg.profiles.items()
+    ]
 
 
 def get_client(profile: str | None = None) -> Client:
     """Build a ClickHouse client for the given profile.
 
-    If *profile* is None or empty, the default profile is used.
-    Connection is read from flat env (default profile overrides only).
+    If *profile* is ``None`` or empty the default profile is used.
     """
-    name = (profile or "").strip() or DEFAULT_PROFILE_NAME
-    if name != DEFAULT_PROFILE_NAME:
-        raise ValueError(
-            f"MCP ClickHouse profile '{name}' was not found. "
-            f"Available profiles: {DEFAULT_PROFILE_NAME}"
-        )
-
-    dsn = os.environ.get(_ENV_DSN)
-    if dsn:
-        return clickhouse_connect.get_client(dsn=dsn)
-
-    return clickhouse_connect.get_client(
-        host=os.environ.get(_ENV_HOST, "localhost"),
-        port=int(os.environ.get(_ENV_PORT, "8123")),
-        username=os.environ.get(_ENV_USER, "default"),
-        password=os.environ.get(_ENV_PASSWORD, ""),
-        database=os.environ.get(_ENV_DATABASE, "default"),
-    )
-
-
-def _get_int_env(key: str, default: int, max_val: int) -> int:
-    raw = os.environ.get(key)
-    if raw is None:
-        return default
-    try:
-        return min(int(raw), max_val)
-    except ValueError:
-        return default
+    _, data = _lookup(profile)
+    dsn = data.dsn or _DEFAULT_DSN
+    return clickhouse_connect.get_client(dsn=dsn)
 
 
 def get_limits(profile: str | None = None) -> dict[str, Any]:
-    """Return execution limits for the given profile (default profile only).
-
-    Flat env MCP_CLICKHOUSE_QUERY_MAX_ROWS and
-    MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS override the default profile;
-    values are clamped to hard limits.
-    """
-    max_rows = _get_int_env(_ENV_QUERY_MAX_ROWS, 5_000, HARD_ROW_LIMIT)
-    timeout = _get_int_env(
-        _ENV_QUERY_COMMAND_TIMEOUT_SECONDS, 30, HARD_COMMAND_TIMEOUT_SECONDS
-    )
-
+    """Return execution limits for the given profile."""
+    _, data = _lookup(profile)
     return {
         "query": {
             "max_rows": {
-                "value": max_rows,
+                "value": data.query_max_rows,
                 "description": (
                     "Row cap applied to every query. Use LIMIT for pagination."
                 ),
@@ -109,7 +240,7 @@ def get_limits(profile: str | None = None) -> dict[str, Any]:
                 "scope": "query",
             },
             "command_timeout_seconds": {
-                "value": timeout,
+                "value": data.query_command_timeout_seconds,
                 "description": (
                     "Maximum execution time allowed for a query before it is "
                     "terminated."
@@ -123,4 +254,5 @@ def get_limits(profile: str | None = None) -> dict[str, Any]:
 
 def get_max_rows(profile: str | None = None) -> int:
     """Return the max_rows limit for the given profile (for run_query)."""
-    return get_limits(profile)["query"]["max_rows"]["value"]
+    _, data = _lookup(profile)
+    return data.query_max_rows

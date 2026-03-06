@@ -8,6 +8,7 @@ from mcp_clickhousex.config import (
     get_limits,
     get_max_rows,
     get_profiles,
+    reset_registry,
 )
 
 
@@ -83,6 +84,7 @@ class _env_override:
                 os.environ[k] = v
             else:
                 os.environ.pop(k, None)
+        reset_registry()
 
     def __exit__(self, *args: object) -> None:
         for k, old in self._saved.items():
@@ -90,3 +92,4 @@ class _env_override:
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = old
+        reset_registry()

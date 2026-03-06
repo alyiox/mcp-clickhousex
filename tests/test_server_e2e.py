@@ -85,6 +85,13 @@ class TestListDatabasesE2E:
         assert "system" in names
         assert "default" in names
 
+    @pytest.mark.anyio
+    async def test_accepts_profile_param(self, client) -> None:
+        result = await client.call_tool("list_databases", {"profile": "default"})
+        assert not result.isError
+        data = _parse_text(result)
+        assert "name" in data["columns"]
+
 
 # -- list_tables ---------------------------------------------------------------
 
@@ -100,6 +107,13 @@ class TestListTablesE2E:
         names = [row[name_idx] for row in data["rows"]]
         assert "test_table" in names
 
+    @pytest.mark.anyio
+    async def test_accepts_profile_param(self, client) -> None:
+        result = await client.call_tool("list_tables", {"profile": "default"})
+        assert not result.isError
+        data = _parse_text(result)
+        assert "name" in data["columns"]
+
 
 # -- list_profiles ------------------------------------------------------------
 
@@ -109,11 +123,12 @@ class TestListProfilesE2E:
     async def test_returns_profiles(self, client) -> None:
         result = await client.call_tool("list_profiles", {})
         assert not result.isError
-        data = _parse_text(result)
-        assert isinstance(data, list)
-        assert len(data) >= 1
-        assert data[0]["name"] == "default"
-        assert "description" in data[0]
+        profiles = [json.loads(c.text) for c in result.content]
+        assert len(profiles) >= 1
+        names = [p["name"] for p in profiles]
+        assert "default" in names
+        default = next(p for p in profiles if p["name"] == "default")
+        assert "description" in default
 
 
 # -- get_cluster_properties -----------------------------------------------------
@@ -150,9 +165,7 @@ class TestGetClusterPropertiesE2E:
 class TestListColumnsE2E:
     @pytest.mark.anyio
     async def test_qualified_table(self, client) -> None:
-        result = await client.call_tool(
-            "list_columns", {"table": "default.test_table"}
-        )
+        result = await client.call_tool("list_columns", {"table": "default.test_table"})
         assert not result.isError
         data = _parse_text(result)
         name_idx = data["columns"].index("name")
@@ -163,12 +176,19 @@ class TestListColumnsE2E:
 
     @pytest.mark.anyio
     async def test_unqualified_table(self, client) -> None:
-        result = await client.call_tool(
-            "list_columns", {"table": "test_table"}
-        )
+        result = await client.call_tool("list_columns", {"table": "test_table"})
         assert not result.isError
         data = _parse_text(result)
         name_idx = data["columns"].index("name")
         names = [row[name_idx] for row in data["rows"]]
         assert "id" in names
         assert "name" in names
+
+    @pytest.mark.anyio
+    async def test_accepts_profile_param(self, client) -> None:
+        result = await client.call_tool(
+            "list_columns", {"table": "default.test_table", "profile": "default"}
+        )
+        assert not result.isError
+        data = _parse_text(result)
+        assert "name" in data["columns"]
