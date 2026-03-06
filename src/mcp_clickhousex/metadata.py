@@ -9,12 +9,12 @@ from __future__ import annotations
 from importlib import resources
 from typing import Any
 
-from mcp_clickhouse.config import get_client
+from mcp_clickhousex.config import get_client
 
 
 def _load_sql(name: str) -> str:
     """Read a ``.sql`` file from the ``sql`` package directory."""
-    ref = resources.files("mcp_clickhouse").joinpath("sql", name)
+    ref = resources.files("mcp_clickhousex").joinpath("sql", name)
     return ref.read_text(encoding="utf-8")
 
 

@@ -6,7 +6,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from mcp_clickhouse import metadata, query
+from mcp_clickhousex import metadata, query
 
 mcp = FastMCP("mcp-clickhouse", json_response=True)
 

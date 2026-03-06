@@ -1,8 +1,8 @@
-"""Unit tests for mcp_clickhouse.validation."""
+"""Unit tests for mcp_clickhousex.validation."""
 
 import pytest
 
-from mcp_clickhouse.validation import validate_read_only
+from mcp_clickhousex.validation import validate_read_only
 
 
 class TestValidateReadOnly:

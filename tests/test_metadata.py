@@ -1,6 +1,6 @@
-"""Functional tests for mcp_clickhouse.metadata."""
+"""Functional tests for mcp_clickhousex.metadata."""
 
-from mcp_clickhouse.metadata import list_columns, list_databases, list_tables
+from mcp_clickhousex.metadata import list_columns, list_databases, list_tables
 
 
 class TestListDatabases:

@@ -1,8 +1,8 @@
-"""Functional tests for mcp_clickhouse.query.run_query."""
+"""Functional tests for mcp_clickhousex.query.run_query."""
 
 import pytest
 
-from mcp_clickhouse.query import run_query
+from mcp_clickhousex.query import run_query
 
 
 class TestRunQuery:

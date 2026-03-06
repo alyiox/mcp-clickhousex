@@ -59,6 +59,9 @@ jobs:
       - name: Format check
         run: uv run ruff format --check src/ tests/
 
+      - name: Type check
+        run: uv run pyright
+
       - name: Test
         run: uv run pytest tests/ -v --tb=short
 

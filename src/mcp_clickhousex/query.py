@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp_clickhouse.config import get_client
-from mcp_clickhouse.validation import validate_read_only
+from mcp_clickhousex.config import get_client
+from mcp_clickhousex.validation import validate_read_only
 
 
 def run_query(

@@ -3,9 +3,9 @@
 import json
 
 import pytest
-
 from mcp.shared.memory import create_connected_server_and_client_session
-from mcp_clickhouse.server import mcp
+
+from mcp_clickhousex.server import mcp
 
 
 @pytest.fixture()
@@ -20,6 +20,7 @@ def _parse_text(result) -> dict:
 
 
 # -- run_query -----------------------------------------------------------------
+
 
 class TestRunQueryE2E:
     @pytest.mark.anyio
@@ -71,6 +72,7 @@ class TestRunQueryE2E:
 
 # -- list_databases ------------------------------------------------------------
 
+
 class TestListDatabasesE2E:
     @pytest.mark.anyio
     async def test_returns_databases(self, client) -> None:
@@ -85,6 +87,7 @@ class TestListDatabasesE2E:
 
 
 # -- list_tables ---------------------------------------------------------------
+
 
 class TestListTablesE2E:
     @pytest.mark.anyio
@@ -108,6 +111,7 @@ class TestListTablesE2E:
 
 
 # -- list_columns --------------------------------------------------------------
+
 
 class TestListColumnsE2E:
     @pytest.mark.anyio

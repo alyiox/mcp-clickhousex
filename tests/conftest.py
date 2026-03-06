@@ -2,8 +2,8 @@
 
 import os
 
-import pytest
 import clickhouse_connect
+import pytest
 
 CH_HOST = "localhost"
 CH_PORT = 8123
