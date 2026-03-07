@@ -1,5 +1,8 @@
 # MCP ClickHouse Tool
 
+[![Build Status](https://github.com/alyiox/mcp-clickhouse/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alyiox/mcp-clickhouse/actions/workflows/ci.yml)
+[![PyPI Version](https://img.shields.io/pypi/v/mcp-clickhousex.svg)](https://pypi.org/project/mcp-clickhousex/)
+
 A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse: metadata discovery and parameterized queries over stdio. No DML/DDL.
 
 **Requirements:** Python 3.13+, a running ClickHouse instance, and connection details via environment variables.
