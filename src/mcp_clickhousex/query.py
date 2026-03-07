@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp_clickhousex.config import get_client, get_max_rows
+from mcp_clickhousex.config import get_client, get_command_timeout, get_max_rows
 from mcp_clickhousex.validation import validate_read_only
 
 
@@ -22,18 +22,25 @@ def run_query(
     validate_read_only(sql)
 
     client = get_client(profile)
+    if parameters is None:
+        parameters = {}
+
     max_rows = get_max_rows(profile)
-    settings = {"max_result_rows": max_rows, "result_overflow_mode": "break"}
+    timeout = get_command_timeout(profile)
+    settings: dict[str, Any] = {
+        "max_result_rows": max_rows + 1,
+        "result_overflow_mode": "break",
+        "max_execution_time": timeout,
+    }
 
     result = client.query(sql, parameters=parameters, settings=settings)
 
     columns = list(result.column_names)
     rows = [list(row) for row in result.result_rows]
 
-    truncated = False
-    if len(rows) > max_rows:
+    truncated = len(rows) > max_rows
+    if truncated:
         rows = rows[:max_rows]
-        truncated = True
 
     out: dict[str, Any] = {
         "columns": columns,

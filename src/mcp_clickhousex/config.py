@@ -256,3 +256,9 @@ def get_max_rows(profile: str | None = None) -> int:
     """Return the max_rows limit for the given profile (for run_query)."""
     _, data = _lookup(profile)
     return data.query_max_rows
+
+
+def get_command_timeout(profile: str | None = None) -> int:
+    """Return the command timeout in seconds for the given profile."""
+    _, data = _lookup(profile)
+    return data.query_command_timeout_seconds
