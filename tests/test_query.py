@@ -35,6 +35,15 @@ class TestRunQuery:
         )
         assert result["rows"] == [[0], [1], [2]]
 
+    def test_database_override(self) -> None:
+        """run_query with database= uses that database as default."""
+        result = run_query(
+            "SELECT currentDatabase() AS db",
+            database="system",
+        )
+        assert result["columns"] == ["db"]
+        assert result["rows"] == [["system"]]
+
     def test_rejects_insert(self) -> None:
         with pytest.raises(ValueError, match="read-only"):
             run_query("INSERT INTO test_table VALUES (99, 'bad')")

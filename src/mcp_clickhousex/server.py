@@ -39,18 +39,19 @@ def get_cluster_properties(profile: str | None = None) -> dict[str, Any]:
 def run_query(
     sql: str,
     parameters: dict[str, Any] | None = None,
+    database: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any]:
-    """[ClickHouse] Execute read-only SQL and return columns and rows.
-
-    Database and table must be specified in the SQL text
-    (e.g. ``SELECT * FROM mydb.mytable``).
+    """[ClickHouse] Execute read-only SQL.
 
     sql: Read-only SELECT statement.
     parameters: Optional. Query parameter values keyed by name.
+    database: Optional. Default database for the query. Src: databases.
     profile: Optional. Profile name. Src: profiles.
     """
-    return query.run_query(sql, parameters=parameters, profile=profile)
+    return query.run_query(
+        sql, parameters=parameters, database=database, profile=profile
+    )
 
 
 @mcp.tool()

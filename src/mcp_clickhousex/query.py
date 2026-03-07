@@ -11,6 +11,7 @@ from mcp_clickhousex.validation import validate_read_only
 def run_query(
     sql: str,
     parameters: dict[str, Any] | None = None,
+    database: str | None = None,
     profile: str | None = None,
 ) -> dict[str, Any]:
     """Execute a read-only SELECT and return ``{columns, rows}``.
@@ -32,6 +33,8 @@ def run_query(
         "result_overflow_mode": "break",
         "max_execution_time": timeout,
     }
+    if database:
+        settings["database"] = database
 
     result = client.query(sql, parameters=parameters, settings=settings)
 
