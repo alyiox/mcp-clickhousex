@@ -76,11 +76,17 @@ Max rows is applied to every query (server-side via `max_result_rows`); results 
 | **`list_profiles`** | List configured profiles (name and optional description). | — |
 | **`get_cluster_properties`** | Get cluster (node) version and execution limits for a profile. | `profile` (optional) |
 | **`run_query`** | Execute a read-only SELECT and return tabular results. Database/table must be specified in the SQL (e.g. `db.table`). Applies the profile's max_rows limit. | `sql`, `parameters`, `profile` (optional) |
+| **`analyze_query`** | Analyze a read-only SELECT via EXPLAIN (plan with index usage, pipeline, syntax). Does not execute the query. | `sql`, `parameters`, `types`, `database`, `profile` (all optional except `sql`) |
 | **`list_databases`** | List all databases. | `profile` (optional) |
 | **`list_tables`** | List tables and views in a database. Returns name, engine, primary_key, sorting_key, partition_key, total_rows, total_bytes for query analysis. | `database`, `profile` (optional) |
 | **`list_columns`** | List columns for a table or view. Table may be qualified as `database.table`. | `table`, `database`, `profile` (optional) |
 
-Query tools (`run_query`, `list_databases`, `list_tables`, `list_columns`) return JSON with `columns` (list of column names) and `rows` (list of value arrays). `run_query` may include `truncated` and `row_limit` when the result was capped. `list_profiles` returns a list of `{ name, description }`. `get_cluster_properties` returns `{ version, limits }` where `limits.query` includes `max_rows`, `hard_row_limit`, and `command_timeout_seconds`.
+**Response shapes:**
+
+- **`run_query`**, **`list_databases`**, **`list_tables`**, **`list_columns`** — `{ columns, rows }`. `run_query` may include `truncated` and `row_limit` when capped.
+- **`analyze_query`** — `{ plan?, pipeline?, syntax? }` keyed by requested EXPLAIN type; each value is text.
+- **`list_profiles`** — list of `{ name, description }`.
+- **`get_cluster_properties`** — `{ version, limits }` where `limits.query` includes `max_rows`, `hard_row_limit`, `command_timeout_seconds`.
 
 **`run_query`** validates that the SQL is a single, read-only `SELECT` (or `WITH … SELECT`). INSERT, UPDATE, DELETE, DDL, and multi-statement batches are rejected.
 
@@ -175,7 +181,7 @@ uv run pytest tests/ -v
 
 ## Roadmap
 
-- Execution plan analysis (`analyze_query`)
+No planned features at this time. Open an issue to suggest improvements.
 
 ## Contributing
 

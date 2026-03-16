@@ -60,6 +60,27 @@ def run_query(
 
 
 @mcp.tool()
+def analyze_query(
+    sql: str,
+    parameters: dict[str, Any] | None = None,
+    database: str | None = None,
+    profile: str | None = None,
+    types: list[str] | None = None,
+) -> dict[str, str]:
+    """[ClickHouse] Analyze query execution plan.
+
+    sql: Read-only SELECT statement.
+    parameters: Optional. Query parameter values keyed by name.
+    database: Optional. Default database for the query. Src: databases.
+    profile: Optional. Profile name. Src: profiles.
+    types: Optional. EXPLAIN types (plan, pipeline, syntax).
+    """
+    return query.analyze_query(
+        sql, parameters=parameters, database=database, profile=profile, types=types
+    )
+
+
+@mcp.tool()
 def list_databases(profile: str | None = None) -> dict[str, Any]:
     """[ClickHouse] List databases.
 

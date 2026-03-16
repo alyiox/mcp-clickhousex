@@ -1,11 +1,11 @@
-"""Functional tests for mcp_clickhousex.query.run_query."""
+"""Functional tests for mcp_clickhousex.query (run_query & analyze_query)."""
 
 import os
 
 import pytest
 
 from mcp_clickhousex.config import reset_registry
-from mcp_clickhousex.query import run_query
+from mcp_clickhousex.query import analyze_query, run_query
 
 
 class TestRunQuery:
@@ -75,3 +75,60 @@ class TestRunQuery:
             else:
                 os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = old
             reset_registry()
+
+
+class TestAnalyzeQuery:
+    def test_default_types(self) -> None:
+        result = analyze_query("SELECT 1")
+        assert "plan" in result
+        assert "pipeline" in result
+        assert len(result) == 2
+        assert isinstance(result["plan"], str)
+        assert isinstance(result["pipeline"], str)
+        assert len(result["plan"]) > 0
+        assert len(result["pipeline"]) > 0
+
+    def test_explicit_types(self) -> None:
+        result = analyze_query(
+            "SELECT number FROM numbers(10)", types=["plan", "syntax"]
+        )
+        assert set(result.keys()) == {"plan", "syntax"}
+        assert "ReadFrom" in result["plan"] or "Expression" in result["plan"]
+
+    def test_single_type_syntax(self) -> None:
+        result = analyze_query("SELECT 1 AS n", types=["syntax"])
+        assert set(result.keys()) == {"syntax"}
+        assert "SELECT" in result["syntax"]
+
+    def test_plan_contains_index_info_for_mergetree(self) -> None:
+        result = analyze_query("SELECT * FROM test_table", types=["plan"])
+        assert "ReadFrom" in result["plan"]
+
+    def test_invalid_type_raises(self) -> None:
+        with pytest.raises(ValueError, match="Unknown EXPLAIN types"):
+            analyze_query("SELECT 1", types=["invalid"])
+
+    def test_empty_types_uses_default(self) -> None:
+        result = analyze_query("SELECT 1", types=[])
+        assert "plan" in result
+        assert "pipeline" in result
+
+    def test_rejects_insert(self) -> None:
+        with pytest.raises(ValueError, match="read-only"):
+            analyze_query("INSERT INTO test_table VALUES (99, 'bad')")
+
+    def test_rejects_empty(self) -> None:
+        with pytest.raises(ValueError, match="empty"):
+            analyze_query("")
+
+    def test_rejects_multiple_statements(self) -> None:
+        with pytest.raises(ValueError, match="Multiple"):
+            analyze_query("SELECT 1; SELECT 2")
+
+    def test_database_override(self) -> None:
+        result = analyze_query(
+            "SELECT name FROM tables LIMIT 1",
+            database="system",
+            types=["syntax"],
+        )
+        assert "syntax" in result

@@ -70,6 +70,49 @@ class TestRunQueryE2E:
         assert result.isError
 
 
+# -- analyze_query -------------------------------------------------------------
+
+
+class TestAnalyzeQueryE2E:
+    @pytest.mark.anyio
+    async def test_default_types(self, client) -> None:
+        result = await client.call_tool("analyze_query", {"sql": "SELECT 1 AS n"})
+        assert not result.isError
+        data = _parse_text(result)
+        assert "plan" in data
+        assert "pipeline" in data
+        assert isinstance(data["plan"], str)
+        assert isinstance(data["pipeline"], str)
+
+    @pytest.mark.anyio
+    async def test_explicit_types(self, client) -> None:
+        result = await client.call_tool(
+            "analyze_query",
+            {"sql": "SELECT number FROM numbers(10)", "types": ["syntax"]},
+        )
+        assert not result.isError
+        data = _parse_text(result)
+        assert "syntax" in data
+        assert "plan" not in data
+        assert "SELECT" in data["syntax"]
+
+    @pytest.mark.anyio
+    async def test_rejects_insert(self, client) -> None:
+        result = await client.call_tool(
+            "analyze_query",
+            {"sql": "INSERT INTO test_table VALUES (99, 'bad')"},
+        )
+        assert result.isError
+
+    @pytest.mark.anyio
+    async def test_rejects_invalid_type(self, client) -> None:
+        result = await client.call_tool(
+            "analyze_query",
+            {"sql": "SELECT 1", "types": ["bogus"]},
+        )
+        assert result.isError
+
+
 # -- list_databases ------------------------------------------------------------
 
 
