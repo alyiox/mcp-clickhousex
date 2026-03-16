@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+from importlib.metadata import version
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -17,6 +19,9 @@ mcp = FastMCP("mcp-clickhouse", json_response=True)
 
 def main() -> None:
     """CLI entrypoint for ``uvx mcp-clickhouse``."""
+    if "--version" in sys.argv or "-V" in sys.argv:
+        print(version("mcp-clickhousex"))
+        return
     mcp.run(transport="stdio")
 
 
