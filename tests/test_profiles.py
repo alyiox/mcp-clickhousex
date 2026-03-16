@@ -11,6 +11,8 @@ from mcp_clickhousex.config import (
     reset_registry,
 )
 
+MCP_PREFIX = "MCP_CLICKHOUSE_"
+
 
 class TestGetProfiles:
     """Profiles are derived from config; single cluster = default profile."""
@@ -32,6 +34,7 @@ class TestGetProfiles:
     def test_default_profile_description_empty_ignored(self) -> None:
         with _env_override({"MCP_CLICKHOUSE_DESCRIPTION": "  "}):
             profiles = get_profiles()
+        assert len(profiles) == 1
         assert profiles[0]["description"] is None
 
 
@@ -73,13 +76,17 @@ class TestGetMaxRows:
 
 
 class _env_override:
+    """Clear all MCP_CLICKHOUSE_* env vars, set overrides, then restore on exit."""
+
     def __init__(self, overrides: dict[str, str]) -> None:
         self._overrides = overrides
-        self._saved: dict[str, str | None] = {}
+        self._saved_mcp: dict[str, str] = {}
 
     def __enter__(self) -> None:
+        for k in list(os.environ):
+            if k.startswith(MCP_PREFIX):
+                self._saved_mcp[k] = os.environ.pop(k)
         for k, v in self._overrides.items():
-            self._saved[k] = os.environ.get(k)
             if v:
                 os.environ[k] = v
             else:
@@ -87,9 +94,8 @@ class _env_override:
         reset_registry()
 
     def __exit__(self, *args: object) -> None:
-        for k, old in self._saved.items():
-            if old is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = old
+        for k in self._overrides:
+            os.environ.pop(k, None)
+        for k, v in self._saved_mcp.items():
+            os.environ[k] = v
         reset_registry()

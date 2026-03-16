@@ -19,10 +19,14 @@ class TestListDatabases:
 
 
 class TestListTables:
-    def test_lists_test_table(self) -> None:
+    def test_returns_key_metadata_columns(self) -> None:
         result = list_tables()
         assert "columns" in result
-        assert "name" in result["columns"]
+        for col in ("name", "engine", "primary_key", "sorting_key", "partition_key"):
+            assert col in result["columns"], f"missing column {col}"
+
+    def test_lists_test_table(self) -> None:
+        result = list_tables()
         name_idx = result["columns"].index("name")
         names = [row[name_idx] for row in result["rows"]]
         assert "test_table" in names

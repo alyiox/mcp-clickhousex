@@ -56,7 +56,7 @@ def run_query(
 
 @mcp.tool()
 def list_databases(profile: str | None = None) -> dict[str, Any]:
-    """[ClickHouse] List databases (from system.databases).
+    """[ClickHouse] List databases.
 
     profile: Optional. Profile name. Src: profiles.
     """
@@ -67,7 +67,10 @@ def list_databases(profile: str | None = None) -> dict[str, Any]:
 def list_tables(
     database: str | None = None, profile: str | None = None
 ) -> dict[str, Any]:
-    """[ClickHouse] List tables and views in a database (from system.tables).
+    """[ClickHouse] List tables and views in a database.
+
+    Returns name, engine, primary_key, sorting_key, partition_key,
+    total_rows, total_bytes for query analysis.
 
     database: Optional. Database name. Src: databases.
     profile: Optional. Profile name. Src: profiles.
@@ -79,7 +82,7 @@ def list_tables(
 def list_columns(
     table: str, database: str | None = None, profile: str | None = None
 ) -> dict[str, Any]:
-    """[ClickHouse] List columns for a table or view (from system.columns).
+    """[ClickHouse] List columns for a table or view.
 
     table: Table name; may be qualified as ``database.table``. Src: tables.
     database: Optional. Database name. Src: databases.

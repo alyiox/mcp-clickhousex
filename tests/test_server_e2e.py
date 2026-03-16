@@ -102,7 +102,8 @@ class TestListTablesE2E:
         result = await client.call_tool("list_tables", {})
         assert not result.isError
         data = _parse_text(result)
-        assert "name" in data["columns"]
+        for col in ("name", "engine", "primary_key", "sorting_key", "partition_key"):
+            assert col in data["columns"], f"missing column {col}"
         name_idx = data["columns"].index("name")
         names = [row[name_idx] for row in data["rows"]]
         assert "test_table" in names

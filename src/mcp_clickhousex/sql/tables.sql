@@ -1,6 +1,9 @@
 SELECT
     name,
     engine,
+    primary_key,
+    sorting_key,
+    partition_key,
     total_rows,
     total_bytes
 FROM system.tables
