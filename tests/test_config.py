@@ -235,3 +235,53 @@ class TestGetMaxRowsPerProfile:
             }
         ):
             assert get_max_rows("wh") == 2000
+
+
+# -- Multiple profiles (profile-based feature) ---------------------------------
+
+
+class TestMultipleProfilesFeature:
+    """Verify multiple named profiles: discovery, per-profile limits, and lookup."""
+
+    def test_multiple_profiles_discovery_limits_and_lookup(self) -> None:
+        with _env(
+            {
+                "MCP_CLICKHOUSE_DSN": "http://default-host:8123",
+                "MCP_CLICKHOUSE_DESCRIPTION": "Primary cluster",
+                "MCP_CLICKHOUSE_QUERY_MAX_ROWS": "1000",
+                "MCP_CLICKHOUSE_PROFILES_ALPHA_DSN": "http://alpha:8123",
+                "MCP_CLICKHOUSE_PROFILES_ALPHA_DESCRIPTION": "Alpha cluster",
+                "MCP_CLICKHOUSE_PROFILES_ALPHA_QUERY_MAX_ROWS": "2000",
+                "MCP_CLICKHOUSE_PROFILES_ALPHA_QUERY_COMMAND_TIMEOUT_SECONDS": "60",
+                "MCP_CLICKHOUSE_PROFILES_BETA_DSN": "http://beta:8123",
+                "MCP_CLICKHOUSE_PROFILES_BETA_DESCRIPTION": "Beta cluster",
+                "MCP_CLICKHOUSE_PROFILES_BETA_QUERY_MAX_ROWS": "500",
+            }
+        ):
+            profiles = get_profiles()
+            names = sorted(p["name"] for p in profiles)
+            assert names == ["alpha", "beta", "default"]
+
+            by_name = {p["name"]: p for p in profiles}
+            assert by_name["default"]["description"] == "Primary cluster"
+            assert by_name["alpha"]["description"] == "Alpha cluster"
+            assert by_name["beta"]["description"] == "Beta cluster"
+
+            assert get_max_rows(None) == 1000
+            assert get_max_rows("default") == 1000
+            assert get_max_rows("alpha") == 2000
+            assert get_max_rows("beta") == 500
+
+            default_limits = get_limits("default")
+            assert default_limits["query"]["max_rows"]["value"] == 1000
+            alpha_limits = get_limits("alpha")
+            assert alpha_limits["query"]["max_rows"]["value"] == 2000
+            assert alpha_limits["query"]["command_timeout_seconds"]["value"] == 60
+            beta_limits = get_limits("beta")
+            assert beta_limits["query"]["max_rows"]["value"] == 500
+
+            with pytest.raises(ValueError, match="unknown") as exc_info:
+                get_client("unknown")
+            assert "alpha" in str(exc_info.value)
+            assert "beta" in str(exc_info.value)
+            assert "default" in str(exc_info.value)
