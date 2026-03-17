@@ -115,3 +115,63 @@ def list_columns(
     profile: Optional. Profile name. Src: profiles.
     """
     return metadata.list_columns(table, database, profile=profile)
+
+
+# -- Resources (profile-first hierarchy: one static + four templates) ---------
+
+
+@mcp.resource(
+    "clickhouse://profiles",
+    name="profiles",
+    description="[ClickHouse] List configured profiles.",
+    mime_type="application/json",
+)
+def resource_profiles() -> list[dict[str, Any]]:
+    """[ClickHouse] List configured profiles."""
+    return get_profiles()
+
+
+@mcp.resource(
+    "clickhouse://profiles/{profile}/cluster-properties",
+    name="cluster-properties",
+    description="[ClickHouse] Cluster properties and limits. Src: profiles.",
+    mime_type="application/json",
+)
+def resource_cluster_properties_for_profile(profile: str) -> dict[str, Any]:
+    """[ClickHouse] Get cluster properties for profile. Src: profiles."""
+    return get_cluster_properties_impl(profile)
+
+
+@mcp.resource(
+    "clickhouse://profiles/{profile}/databases",
+    name="databases",
+    description="[ClickHouse] List databases for profile. Src: profiles.",
+    mime_type="application/json",
+)
+def resource_databases_for_profile(profile: str) -> dict[str, Any]:
+    """[ClickHouse] List databases for profile. Src: profiles."""
+    return metadata.list_databases(profile=profile)
+
+
+@mcp.resource(
+    "clickhouse://profiles/{profile}/databases/{database}/tables",
+    name="tables",
+    description="[ClickHouse] List tables for profile and db. Src: profiles, dbs.",
+    mime_type="application/json",
+)
+def resource_tables_for_profile_database(profile: str, database: str) -> dict[str, Any]:
+    """[ClickHouse] List tables for profile and database. Src: profiles, dbs."""
+    return metadata.list_tables(database, profile=profile)
+
+
+@mcp.resource(
+    "clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns",
+    name="table-columns",
+    description="[ClickHouse] List columns (profile+db). Src: profiles, dbs, tables.",
+    mime_type="application/json",
+)
+def resource_columns_for_profile_database_table(
+    profile: str, database: str, table: str
+) -> dict[str, Any]:
+    """[ClickHouse] List columns for table in profile+db. Src: profiles, dbs."""
+    return metadata.list_columns(table, database, profile=profile)

@@ -3,7 +3,7 @@
 [![Build Status](https://github.com/alyiox/mcp-clickhouse/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alyiox/mcp-clickhouse/actions/workflows/ci.yml)
 [![PyPI Version](https://img.shields.io/pypi/v/mcp-clickhousex.svg)](https://pypi.org/project/mcp-clickhousex/)
 
-A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse that supports metadata discovery, parameterized queries, and query analysis, with profile-based configuration and strict no-DML/DDL enforcement.
+A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse that supports metadata discovery, resources, parameterized queries, and query analysis, with profile-based configuration and strict no-DML/DDL enforcement.
 
 **Requirements:** Python 3.13+, a running ClickHouse instance, and connection details via environment variables.
 
@@ -78,8 +78,21 @@ Max rows is applied to every query (server-side via `max_result_rows`); results 
 | **`run_query`** | Execute a read-only SELECT and return tabular results. Database/table must be specified in the SQL (e.g. `db.table`). Applies the profile's max rows limit. | `sql`, `parameters` (optional), `profile` (optional) |
 | **`analyze_query`** | Analyze a read-only SELECT via EXPLAIN (plan with index usage, pipeline, syntax). | `sql`, `parameters` (optional), `types` (optional), `database` (optional), `profile` (optional) |
 | **`list_databases`** | List all databases. | `profile` (optional) |
-| **`list_tables`** | List tables and views in a database. Returns name, engine, primary_key, sorting_key, partition_key, total_rows, total_bytes for query analysis. | `database` (optional), `profile` (optional) |
+| **`list_tables`** | List tables and views in a database. Returns `name`, `engine`, `primary_key`, `sorting_key`, `partition_key`, `total_rows`, `total_bytes` for query analysis. | `database` (optional), `profile` (optional) |
 | **`list_columns`** | List columns for a table or view. | `table`, `database` (optional), `profile` (optional) |
+
+## Resources
+
+The server exposes the same discovery and metadata as the tools above via URI-addressable resources (profile-first hierarchy). All resource content is JSON (`application/json`). Use path segment `default` for the default profile or database.
+
+| Resource | URI | Description |
+|----------|-----|-------------|
+| Profiles | `clickhouse://profiles` | List configured profiles (same as `list_profiles`) |
+| Cluster properties | `clickhouse://profiles/{profile}/cluster-properties` | Cluster version and limits for a profile |
+| Databases | `clickhouse://profiles/{profile}/databases` | List databases for a profile |
+| Tables | `clickhouse://profiles/{profile}/databases/{database}/tables` | List tables for a profile and database |
+| Table columns | `clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns` | List columns for a table |
+
 
 ## Security
 

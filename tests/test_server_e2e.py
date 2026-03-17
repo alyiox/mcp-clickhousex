@@ -236,3 +236,96 @@ class TestListColumnsE2E:
         assert not result.isError
         data = _parse_text(result)
         assert "name" in data["columns"]
+
+
+# -- Resources (list_resources, read_resource) ---------------------------------
+
+
+class TestResourcesE2E:
+    @pytest.mark.anyio
+    async def test_list_resources_includes_clickhouse_uris(self, client) -> None:
+        result = await client.list_resources()
+        uris = [str(r.uri) for r in result.resources]
+        assert "clickhouse://profiles" in uris
+
+    @pytest.mark.anyio
+    async def test_list_resource_templates_includes_profile_first_uris(
+        self, client
+    ) -> None:
+        result = await client.list_resource_templates()
+        uri_templates = [t.uriTemplate for t in result.resourceTemplates]
+        assert "clickhouse://profiles/{profile}/cluster-properties" in uri_templates
+        assert "clickhouse://profiles/{profile}/databases" in uri_templates
+        tables_tpl = "clickhouse://profiles/{profile}/databases/{database}/tables"
+        assert tables_tpl in uri_templates
+        cols_tpl = "clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns"
+        assert cols_tpl in uri_templates
+
+    @pytest.mark.anyio
+    async def test_read_resource_profiles(self, client) -> None:
+        result = await client.read_resource("clickhouse://profiles")
+        assert result.contents
+        content = result.contents[0]
+        assert hasattr(content, "text")
+        data = json.loads(content.text)
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert any(p.get("name") == "default" for p in data)
+
+    @pytest.mark.anyio
+    async def test_read_resource_cluster_properties(self, client) -> None:
+        result = await client.read_resource(
+            "clickhouse://profiles/default/cluster-properties"
+        )
+        assert result.contents
+        content = result.contents[0]
+        assert hasattr(content, "text")
+        data = json.loads(content.text)
+        assert "version" in data
+        assert "limits" in data
+        assert "query" in data["limits"]
+
+    @pytest.mark.anyio
+    async def test_read_resource_databases(self, client) -> None:
+        result = await client.read_resource("clickhouse://profiles/default/databases")
+        assert result.contents
+        content = result.contents[0]
+        assert hasattr(content, "text")
+        data = json.loads(content.text)
+        assert "columns" in data
+        assert "rows" in data
+        assert "name" in data["columns"]
+        names = [row[data["columns"].index("name")] for row in data["rows"]]
+        assert "default" in names
+        assert "system" in names
+
+    @pytest.mark.anyio
+    async def test_read_resource_tables(self, client) -> None:
+        result = await client.read_resource(
+            "clickhouse://profiles/default/databases/default/tables"
+        )
+        assert result.contents
+        content = result.contents[0]
+        assert hasattr(content, "text")
+        data = json.loads(content.text)
+        assert "columns" in data
+        assert "rows" in data
+        assert "name" in data["columns"]
+        names = [row[data["columns"].index("name")] for row in data["rows"]]
+        assert "test_table" in names
+
+    @pytest.mark.anyio
+    async def test_read_resource_table_columns(self, client) -> None:
+        result = await client.read_resource(
+            "clickhouse://profiles/default/databases/default/tables/test_table/columns"
+        )
+        assert result.contents
+        content = result.contents[0]
+        assert hasattr(content, "text")
+        data = json.loads(content.text)
+        assert "columns" in data
+        assert "rows" in data
+        assert "name" in data["columns"]
+        names = [row[data["columns"].index("name")] for row in data["rows"]]
+        assert "id" in names
+        assert "name" in names
