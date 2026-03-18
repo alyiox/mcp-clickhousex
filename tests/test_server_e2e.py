@@ -19,6 +19,51 @@ def _parse_text(result) -> dict:
     return json.loads(result.content[0].text)
 
 
+def _tool_by_name(tools_result, name: str):
+    return next(tool for tool in tools_result.tools if tool.name == name)
+
+
+# -- tool schemas --------------------------------------------------------------
+
+
+class TestToolSchemasE2E:
+    @pytest.mark.anyio
+    async def test_run_query_schema_includes_parameter_descriptions(
+        self, client
+    ) -> None:
+        result = await client.list_tools()
+        tool = _tool_by_name(result, "run_query")
+        assert tool.description == "[ClickHouse] Execute read-only SQL."
+        props = tool.inputSchema["properties"]
+        assert props["sql"]["description"] == "Read-only SELECT statement."
+        assert props["parameters"]["description"] == (
+            "Optional query parameter values keyed by name."
+        )
+        assert props["database"]["description"] == (
+            "Optional default database. Src: databases."
+        )
+        assert props["profile"]["description"] == (
+            "Optional profile name. Src: profiles."
+        )
+
+    @pytest.mark.anyio
+    async def test_output_schemas_match_typed_models(self, client) -> None:
+        result = await client.list_tools()
+
+        run_query_tool = _tool_by_name(result, "run_query")
+        output_props = run_query_tool.outputSchema["properties"]
+        assert output_props["columns"]["type"] == "array"
+        assert output_props["rows"]["type"] == "array"
+        assert output_props["truncated"]["anyOf"][0]["type"] == "boolean"
+        assert output_props["row_limit"]["anyOf"][0]["type"] == "integer"
+
+        analyze_tool = _tool_by_name(result, "analyze_query")
+        analyze_props = analyze_tool.outputSchema["properties"]
+        assert analyze_props["plan"]["anyOf"][0]["type"] == "string"
+        assert analyze_props["pipeline"]["anyOf"][0]["type"] == "string"
+        assert analyze_props["syntax"]["anyOf"][0]["type"] == "string"
+
+
 # -- run_query -----------------------------------------------------------------
 
 

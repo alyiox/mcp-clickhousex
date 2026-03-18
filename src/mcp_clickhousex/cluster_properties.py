@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from mcp_clickhousex.config import get_client, get_limits
+from mcp_clickhousex.models import ClusterPropertiesModel
 
 
-def get_cluster_properties(profile: str | None = None) -> dict[str, Any]:
+def get_cluster_properties(profile: str | None = None) -> ClusterPropertiesModel:
     """Return ClickHouse cluster (node) version and execution limits for the profile.
 
     Connects with *profile* (default if None), runs ``SELECT version()``,
@@ -21,7 +20,4 @@ def get_cluster_properties(profile: str | None = None) -> dict[str, Any]:
 
     limits = get_limits(profile)
 
-    return {
-        "version": version,
-        "limits": limits,
-    }
+    return ClusterPropertiesModel(version=version, limits=limits)

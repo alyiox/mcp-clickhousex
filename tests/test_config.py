@@ -27,6 +27,14 @@ _ALL_FLAT_KEYS = [
 ]
 
 
+def _profile_dicts(profiles):
+    return [profile.model_dump() for profile in profiles]
+
+
+def _limits_dict(limits):
+    return limits.model_dump()
+
+
 @contextmanager
 def _env(overrides: dict[str, str]) -> Iterator[None]:
     """Set env vars and reset registry; restore on exit."""
@@ -65,19 +73,19 @@ def _env(overrides: dict[str, str]) -> Iterator[None]:
 class TestProfileDiscovery:
     def test_no_env_creates_default(self) -> None:
         with _env({}):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         assert len(profiles) == 1
         assert profiles[0]["name"] == DEFAULT_PROFILE_NAME
 
     def test_flat_only_creates_default(self) -> None:
         with _env({"MCP_CLICKHOUSE_DSN": "http://localhost:8123"}):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         assert len(profiles) == 1
         assert profiles[0]["name"] == DEFAULT_PROFILE_NAME
 
     def test_structured_single_profile(self) -> None:
         with _env({"MCP_CLICKHOUSE_PROFILES_WAREHOUSE_DSN": "http://wh:8123"}):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         names = [p["name"] for p in profiles]
         assert "warehouse" in names
 
@@ -88,7 +96,7 @@ class TestProfileDiscovery:
                 "MCP_CLICKHOUSE_PROFILES_BETA_DSN": "http://b:8123",
             }
         ):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         names = sorted(p["name"] for p in profiles)
         assert names == ["alpha", "beta"]
 
@@ -99,7 +107,7 @@ class TestProfileDiscovery:
                 "MCP_CLICKHOUSE_PROFILES_OTHER_DSN": "http://other:8123",
             }
         ):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         names = sorted(p["name"] for p in profiles)
         assert names == ["default", "other"]
 
@@ -117,7 +125,7 @@ class TestMergeRules:
                 "MCP_CLICKHOUSE_DESCRIPTION": "flat desc",
             }
         ):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         default = [p for p in profiles if p["name"] == DEFAULT_PROFILE_NAME][0]
         assert default["description"] == "flat desc"
 
@@ -128,7 +136,7 @@ class TestMergeRules:
                 "MCP_CLICKHOUSE_PROFILES_DEFAULT_DESCRIPTION": "from structured",
             }
         ):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         default = [p for p in profiles if p["name"] == DEFAULT_PROFILE_NAME][0]
         assert default["description"] == "from structured"
 
@@ -141,7 +149,7 @@ class TestMergeRules:
                 "MCP_CLICKHOUSE_PROFILES_WH_DESCRIPTION": "wh desc",
             }
         ):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         wh = [p for p in profiles if p["name"] == "wh"][0]
         assert wh["description"] == "wh desc"
 
@@ -152,14 +160,14 @@ class TestMergeRules:
 class TestProfileNames:
     def test_case_insensitive(self) -> None:
         with _env({"MCP_CLICKHOUSE_PROFILES_MyProfile_DSN": "http://x:8123"}):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         names = [p["name"] for p in profiles]
         assert "myprofile" in names
 
     def test_underscore_in_name_ignored(self) -> None:
         """Profile names with underscores are not parseable and are skipped."""
         with _env({"MCP_CLICKHOUSE_PROFILES_MY_PROFILE_DSN": "http://x:8123"}):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         names = [p["name"] for p in profiles]
         assert "my_profile" not in names
 
@@ -197,13 +205,13 @@ class TestGetLimitsPerProfile:
                 "MCP_CLICKHOUSE_PROFILES_WH_QUERY_COMMAND_TIMEOUT_SECONDS": "120",
             }
         ):
-            limits = get_limits("wh")
+            limits = _limits_dict(get_limits("wh"))
         assert limits["query"]["max_rows"]["value"] == 8000
         assert limits["query"]["command_timeout_seconds"]["value"] == 120
 
     def test_named_profile_defaults_when_unset(self) -> None:
         with _env({"MCP_CLICKHOUSE_PROFILES_WH_DSN": "http://wh:8123"}):
-            limits = get_limits("wh")
+            limits = _limits_dict(get_limits("wh"))
         assert limits["query"]["max_rows"]["value"] == 5_000
         assert limits["query"]["command_timeout_seconds"]["value"] == 30
 
@@ -215,7 +223,7 @@ class TestGetLimitsPerProfile:
                 "MCP_CLICKHOUSE_PROFILES_WH_QUERY_COMMAND_TIMEOUT_SECONDS": "999999",
             }
         ):
-            limits = get_limits("wh")
+            limits = _limits_dict(get_limits("wh"))
         assert limits["query"]["max_rows"]["value"] == HARD_ROW_LIMIT
         assert (
             limits["query"]["command_timeout_seconds"]["value"]
@@ -258,7 +266,7 @@ class TestMultipleProfilesFeature:
                 "MCP_CLICKHOUSE_PROFILES_BETA_QUERY_MAX_ROWS": "500",
             }
         ):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
             names = sorted(p["name"] for p in profiles)
             assert names == ["alpha", "beta", "default"]
 
@@ -272,12 +280,12 @@ class TestMultipleProfilesFeature:
             assert get_max_rows("alpha") == 2000
             assert get_max_rows("beta") == 500
 
-            default_limits = get_limits("default")
+            default_limits = _limits_dict(get_limits("default"))
             assert default_limits["query"]["max_rows"]["value"] == 1000
-            alpha_limits = get_limits("alpha")
+            alpha_limits = _limits_dict(get_limits("alpha"))
             assert alpha_limits["query"]["max_rows"]["value"] == 2000
             assert alpha_limits["query"]["command_timeout_seconds"]["value"] == 60
-            beta_limits = get_limits("beta")
+            beta_limits = _limits_dict(get_limits("beta"))
             assert beta_limits["query"]["max_rows"]["value"] == 500
 
             with pytest.raises(ValueError, match="unknown") as exc_info:

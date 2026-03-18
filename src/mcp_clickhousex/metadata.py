@@ -10,6 +10,7 @@ from importlib import resources
 from typing import Any
 
 from mcp_clickhousex.config import get_client
+from mcp_clickhousex.models import TabularResultModel
 
 
 def _load_sql(name: str) -> str:
@@ -22,16 +23,16 @@ def _query(
     sql: str,
     parameters: dict[str, Any] | None = None,
     profile: str | None = None,
-) -> dict[str, Any]:
+) -> TabularResultModel:
     """Execute a read-only metadata query and return ``{columns, rows}``."""
     client = get_client(profile)
     result = client.query(sql, parameters=parameters)
     columns = list(result.column_names)
     rows = [list(row) for row in result.result_rows]
-    return {"columns": columns, "rows": rows}
+    return TabularResultModel(columns=columns, rows=rows)
 
 
-def list_databases(profile: str | None = None) -> dict[str, Any]:
+def list_databases(profile: str | None = None) -> TabularResultModel:
     """Return all databases from ``system.databases``."""
     sql = _load_sql("databases.sql")
     return _query(sql, profile=profile)
@@ -39,7 +40,7 @@ def list_databases(profile: str | None = None) -> dict[str, Any]:
 
 def list_tables(
     database: str | None = None, profile: str | None = None
-) -> dict[str, Any]:
+) -> TabularResultModel:
     """Return tables/views in *database* from ``system.tables``."""
     if not database:
         client = get_client(profile)
@@ -50,7 +51,7 @@ def list_tables(
 
 def list_columns(
     table: str, database: str | None = None, profile: str | None = None
-) -> dict[str, Any]:
+) -> TabularResultModel:
     """Return columns for *table* from ``system.columns``.
 
     *table* may be qualified as ``database.table``; if so the

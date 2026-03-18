@@ -8,38 +8,48 @@ from mcp_clickhousex.config import reset_registry
 from mcp_clickhousex.query import analyze_query, run_query
 
 
+def _result_dict(result):
+    return result.model_dump(exclude_none=True)
+
+
 class TestRunQuery:
     def test_simple_select(self) -> None:
-        result = run_query("SELECT 1 AS n")
+        result = _result_dict(run_query("SELECT 1 AS n"))
         assert result["columns"] == ["n"]
         assert result["rows"] == [[1]]
 
     def test_qualified_table(self) -> None:
-        result = run_query("SELECT id, name FROM test_table ORDER BY id")
+        result = _result_dict(run_query("SELECT id, name FROM test_table ORDER BY id"))
         assert result["columns"] == ["id", "name"]
         assert len(result["rows"]) == 3
         assert result["rows"][0] == [1, "alice"]
         assert result["rows"][2] == [3, "charlie"]
 
     def test_with_parameters(self) -> None:
-        result = run_query(
-            "SELECT name FROM test_table WHERE id = %(target_id)s",
-            parameters={"target_id": 2},
+        result = _result_dict(
+            run_query(
+                "SELECT name FROM test_table WHERE id = %(target_id)s",
+                parameters={"target_id": 2},
+            )
         )
         assert result["rows"] == [["bob"]]
 
     def test_cte(self) -> None:
-        result = run_query(
-            "WITH nums AS (SELECT number AS n FROM system.numbers LIMIT 3) "
-            "SELECT n FROM nums ORDER BY n"
+        result = _result_dict(
+            run_query(
+                "WITH nums AS (SELECT number AS n FROM system.numbers LIMIT 3) "
+                "SELECT n FROM nums ORDER BY n"
+            )
         )
         assert result["rows"] == [[0], [1], [2]]
 
     def test_database_override(self) -> None:
         """run_query with database= uses that database as default."""
-        result = run_query(
-            "SELECT currentDatabase() AS db",
-            database="system",
+        result = _result_dict(
+            run_query(
+                "SELECT currentDatabase() AS db",
+                database="system",
+            )
         )
         assert result["columns"] == ["db"]
         assert result["rows"] == [["system"]]
@@ -66,7 +76,9 @@ class TestRunQuery:
         try:
             os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = "2"
             reset_registry()
-            result = run_query("SELECT number AS n FROM system.numbers LIMIT 5")
+            result = _result_dict(
+                run_query("SELECT number AS n FROM system.numbers LIMIT 5")
+            )
             assert result["columns"] == ["n"]
             assert len(result["rows"]) <= 2
         finally:
@@ -79,7 +91,7 @@ class TestRunQuery:
 
 class TestAnalyzeQuery:
     def test_default_types(self) -> None:
-        result = analyze_query("SELECT 1")
+        result = _result_dict(analyze_query("SELECT 1"))
         assert "plan" in result
         assert "pipeline" in result
         assert len(result) == 2
@@ -89,19 +101,19 @@ class TestAnalyzeQuery:
         assert len(result["pipeline"]) > 0
 
     def test_explicit_types(self) -> None:
-        result = analyze_query(
-            "SELECT number FROM numbers(10)", types=["plan", "syntax"]
+        result = _result_dict(
+            analyze_query("SELECT number FROM numbers(10)", types=["plan", "syntax"])
         )
         assert set(result.keys()) == {"plan", "syntax"}
         assert "ReadFrom" in result["plan"] or "Expression" in result["plan"]
 
     def test_single_type_syntax(self) -> None:
-        result = analyze_query("SELECT 1 AS n", types=["syntax"])
+        result = _result_dict(analyze_query("SELECT 1 AS n", types=["syntax"]))
         assert set(result.keys()) == {"syntax"}
         assert "SELECT" in result["syntax"]
 
     def test_plan_contains_index_info_for_mergetree(self) -> None:
-        result = analyze_query("SELECT * FROM test_table", types=["plan"])
+        result = _result_dict(analyze_query("SELECT * FROM test_table", types=["plan"]))
         assert "ReadFrom" in result["plan"]
 
     def test_invalid_type_raises(self) -> None:
@@ -109,7 +121,7 @@ class TestAnalyzeQuery:
             analyze_query("SELECT 1", types=["invalid"])
 
     def test_empty_types_uses_default(self) -> None:
-        result = analyze_query("SELECT 1", types=[])
+        result = _result_dict(analyze_query("SELECT 1", types=[]))
         assert "plan" in result
         assert "pipeline" in result
 
@@ -126,9 +138,11 @@ class TestAnalyzeQuery:
             analyze_query("SELECT 1; SELECT 2")
 
     def test_database_override(self) -> None:
-        result = analyze_query(
-            "SELECT name FROM tables LIMIT 1",
-            database="system",
-            types=["syntax"],
+        result = _result_dict(
+            analyze_query(
+                "SELECT name FROM tables LIMIT 1",
+                database="system",
+                types=["syntax"],
+            )
         )
         assert "syntax" in result

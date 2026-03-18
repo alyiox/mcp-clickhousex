@@ -28,10 +28,16 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 import clickhouse_connect
 from clickhouse_connect.driver.client import Client
+
+from mcp_clickhousex.models import (
+    ExecutionLimitsModel,
+    OptionDescriptor,
+    ProfileModel,
+    QueryLimitsModel,
+)
 
 DEFAULT_PROFILE_NAME = "default"
 
@@ -199,11 +205,11 @@ def _lookup(profile: str | None) -> tuple[str, _ProfileData]:
 # -- Public API ----------------------------------------------------------------
 
 
-def get_profiles() -> list[dict[str, Any]]:
+def get_profiles() -> list[ProfileModel]:
     """Return all configured profiles with name and description."""
     reg = _get_registry()
     return [
-        {"name": name, "description": data.description}
+        ProfileModel(name=name, description=data.description)
         for name, data in reg.profiles.items()
     ]
 
@@ -218,38 +224,34 @@ def get_client(profile: str | None = None) -> Client:
     return clickhouse_connect.get_client(dsn=dsn)
 
 
-def get_limits(profile: str | None = None) -> dict[str, Any]:
+def get_limits(profile: str | None = None) -> ExecutionLimitsModel:
     """Return execution limits for the given profile."""
     _, data = _lookup(profile)
-    return {
-        "query": {
-            "max_rows": {
-                "value": data.query_max_rows,
-                "description": (
-                    "Row cap applied to every query. Use LIMIT for pagination."
-                ),
-                "is_overridable": False,
-                "scope": "query",
-            },
-            "hard_row_limit": {
-                "value": HARD_ROW_LIMIT,
-                "description": (
-                    "Absolute row ceiling; max_rows is clamped to this value."
-                ),
-                "is_overridable": False,
-                "scope": "query",
-            },
-            "command_timeout_seconds": {
-                "value": data.query_command_timeout_seconds,
-                "description": (
+    return ExecutionLimitsModel(
+        query=QueryLimitsModel(
+            max_rows=OptionDescriptor[int](
+                value=data.query_max_rows,
+                description="Row cap applied to every query. Use LIMIT for pagination.",
+                is_overridable=False,
+                scope="query",
+            ),
+            hard_row_limit=OptionDescriptor[int](
+                value=HARD_ROW_LIMIT,
+                description="Absolute row ceiling; max_rows is clamped to this value.",
+                is_overridable=False,
+                scope="query",
+            ),
+            command_timeout_seconds=OptionDescriptor[int](
+                value=data.query_command_timeout_seconds,
+                description=(
                     "Maximum execution time allowed for a query before it is "
                     "terminated."
                 ),
-                "is_overridable": False,
-                "scope": "query",
-            },
-        },
-    }
+                is_overridable=False,
+                scope="query",
+            ),
+        )
+    )
 
 
 def get_max_rows(profile: str | None = None) -> int:

@@ -14,26 +14,34 @@ from mcp_clickhousex.config import (
 MCP_PREFIX = "MCP_CLICKHOUSE_"
 
 
+def _profile_dicts(profiles):
+    return [profile.model_dump() for profile in profiles]
+
+
+def _limits_dict(limits):
+    return limits.model_dump()
+
+
 class TestGetProfiles:
     """Profiles are derived from config; single cluster = default profile."""
 
     def test_single_default_profile(self) -> None:
         with _env_override({}):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         assert len(profiles) == 1
         assert profiles[0]["name"] == DEFAULT_PROFILE_NAME
         assert profiles[0]["description"] is None
 
     def test_default_profile_description_override(self) -> None:
         with _env_override({"MCP_CLICKHOUSE_DESCRIPTION": " Main cluster "}):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         assert len(profiles) == 1
         assert profiles[0]["name"] == DEFAULT_PROFILE_NAME
         assert profiles[0]["description"] == "Main cluster"
 
     def test_default_profile_description_empty_ignored(self) -> None:
         with _env_override({"MCP_CLICKHOUSE_DESCRIPTION": "  "}):
-            profiles = get_profiles()
+            profiles = _profile_dicts(get_profiles())
         assert len(profiles) == 1
         assert profiles[0]["description"] is None
 
@@ -43,7 +51,7 @@ class TestGetLimits:
 
     def test_default_limits(self) -> None:
         with _env_override({}):
-            limits = get_limits()
+            limits = _limits_dict(get_limits())
         q = limits["query"]
         assert q["max_rows"]["value"] == 5_000
         assert q["hard_row_limit"]["value"] == HARD_ROW_LIMIT
@@ -57,13 +65,13 @@ class TestGetLimits:
                 "MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS": "60",
             }
         ):
-            limits = get_limits()
+            limits = _limits_dict(get_limits())
         assert limits["query"]["max_rows"]["value"] == 1000
         assert limits["query"]["command_timeout_seconds"]["value"] == 60
 
     def test_max_rows_clamped_to_hard_limit(self) -> None:
         with _env_override({"MCP_CLICKHOUSE_QUERY_MAX_ROWS": "999999"}):
-            limits = get_limits()
+            limits = _limits_dict(get_limits())
         assert limits["query"]["max_rows"]["value"] == HARD_ROW_LIMIT
 
 
