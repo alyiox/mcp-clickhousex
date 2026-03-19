@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -25,6 +28,15 @@ _ALL_FLAT_KEYS = [
     "MCP_CLICKHOUSE_QUERY_MAX_ROWS",
     "MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS",
 ]
+
+
+@pytest.fixture(autouse=True)
+def _no_user_config_file():
+    """Use a nonexistent user config path so env-only tests are deterministic."""
+    nonexistent = Path(tempfile.gettempdir()) / "mcp_clickhousex_test_nonexistent"
+    with patch("mcp_clickhousex.config._user_config_path") as p:
+        p.return_value = nonexistent / "mcp-clickhousex" / "config.json"
+        yield
 
 
 def _profile_dicts(profiles):
@@ -293,3 +305,112 @@ class TestMultipleProfilesFeature:
             assert "alpha" in str(exc_info.value)
             assert "beta" in str(exc_info.value)
             assert "default" in str(exc_info.value)
+
+
+# -- User-level config file ----------------------------------------------------
+
+
+class TestUserConfigFile:
+    """User config file at ~/.config/mcp-clickhousex/config.json; env overrides file."""
+
+    def test_file_only_profiles_loaded(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "mcp-clickhousex" / "config.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(
+            """{
+  "profiles": {
+    "default": {
+      "dsn": "http://file-default:8123/default",
+      "description": "From file",
+      "query_max_rows": 3000,
+      "query_command_timeout_seconds": 45
+    },
+    "warehouse": {
+      "dsn": "http://file-wh:8123/analytics",
+      "description": "Warehouse from file",
+      "query_max_rows": 8000,
+      "query_command_timeout_seconds": 120
+    }
+  }
+}""",
+            encoding="utf-8",
+        )
+        with patch(
+            "mcp_clickhousex.config._user_config_path", return_value=config_path
+        ):
+            with _env({}):
+                profiles = _profile_dicts(get_profiles())
+                names = sorted(p["name"] for p in profiles)
+                assert names == ["default", "warehouse"]
+                by_name = {p["name"]: p for p in profiles}
+                assert by_name["default"]["description"] == "From file"
+                assert by_name["warehouse"]["description"] == "Warehouse from file"
+                assert get_max_rows("default") == 3000
+                assert get_max_rows("warehouse") == 8000
+                limits_default = _limits_dict(get_limits("default"))
+                assert limits_default["query"]["command_timeout_seconds"]["value"] == 45
+                limits_wh = _limits_dict(get_limits("warehouse"))
+                assert limits_wh["query"]["command_timeout_seconds"]["value"] == 120
+
+    def test_file_and_env_env_wins(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "mcp-clickhousex" / "config.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(
+            '{"profiles": {"default": {"dsn": "http://file:8123", '
+            '"description": "File", "query_max_rows": 3000}}}',
+            encoding="utf-8",
+        )
+        with patch(
+            "mcp_clickhousex.config._user_config_path", return_value=config_path
+        ):
+            with _env({"MCP_CLICKHOUSE_QUERY_MAX_ROWS": "9999"}):
+                # Env overrides file: 3000 from file, 9999 from env (capped)
+                assert get_max_rows(None) == 9999
+                profiles = _profile_dicts(get_profiles())
+                default = [p for p in profiles if p["name"] == DEFAULT_PROFILE_NAME][0]
+                assert default["description"] == "File"
+
+    def test_invalid_json_fallback(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "mcp-clickhousex" / "config.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("not json {", encoding="utf-8")
+        with patch(
+            "mcp_clickhousex.config._user_config_path", return_value=config_path
+        ):
+            with _env({}):
+                profiles = _profile_dicts(get_profiles())
+                assert len(profiles) == 1
+                assert profiles[0]["name"] == DEFAULT_PROFILE_NAME
+
+    def test_invalid_structure_fallback(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "mcp-clickhousex" / "config.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text('{"other_key": {}}', encoding="utf-8")
+        with patch(
+            "mcp_clickhousex.config._user_config_path", return_value=config_path
+        ):
+            with _env({}):
+                profiles = _profile_dicts(get_profiles())
+                assert len(profiles) == 1
+                assert profiles[0]["name"] == DEFAULT_PROFILE_NAME
+
+    def test_invalid_profile_name_skipped(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "mcp-clickhousex" / "config.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(
+            """{
+  "profiles": {
+    "my_profile": {"dsn": "http://skip:8123", "description": "Skip"},
+    "valid": {"dsn": "http://valid:8123", "description": "Valid"}
+  }
+}""",
+            encoding="utf-8",
+        )
+        with patch(
+            "mcp_clickhousex.config._user_config_path", return_value=config_path
+        ):
+            with _env({}):
+                profiles = _profile_dicts(get_profiles())
+                names = [p["name"] for p in profiles]
+                assert "my_profile" not in names
+                assert "valid" in names

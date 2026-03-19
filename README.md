@@ -67,6 +67,35 @@ export MCP_CLICKHOUSE_PROFILES_WAREHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS="120"
 
 **Merge rule:** Flat vars always feed into the `default` profile. If both `MCP_CLICKHOUSE_PROFILES_DEFAULT_*` and flat vars are set, flat vars win on conflict.
 
+### User-level configuration
+
+You can define profiles in a user config file instead of (or in addition to) environment variables. The file is read first; environment variables override file values.
+
+- **Path:** `~/.config/mcp-clickhousex/config.json` (Windows: `%USERPROFILE%\.config\mcp-clickhousex\config.json`).
+- **Precedence:** user config file → structured env vars → flat env vars (later overrides earlier).
+- **Format:** JSON with a top-level `profiles` object; each profile supports `dsn`, `description`, `query_max_rows`, `query_command_timeout_seconds`. Profile names must be alphanumeric (no underscores).
+
+Example `config.json`:
+
+```json
+{
+  "profiles": {
+    "default": {
+      "dsn": "http://default:@localhost:8123/default",
+      "description": "Primary",
+      "query_max_rows": 5000,
+      "query_command_timeout_seconds": 60
+    },
+    "warehouse": {
+      "dsn": "http://user:pass@warehouse:8123/analytics",
+      "description": "Warehouse"
+    }
+  }
+}
+```
+
+Keep secrets in environment variables or a secret manager; avoid committing connection strings in the config file.
+
 Max rows is applied to every query (server-side via `max_result_rows`); results may be truncated with a `truncated` and `row_limit` field in the response.
 
 ## Tools

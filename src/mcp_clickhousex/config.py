@@ -1,8 +1,8 @@
-"""Environment-based ClickHouse connection configuration.
+"""ClickHouse connection configuration (user config file + environment).
 
-Supports multiple named profiles via structured env vars and a
-backward-compatible flat env layer that creates/overrides the default
-profile.
+Supports multiple named profiles via an optional user config file
+(~/.config/mcp-clickhousex/config.json), structured env vars, and a
+backward-compatible flat env layer. File is read first; env overrides.
 
 Structured (named profiles)::
 
@@ -25,9 +25,11 @@ underscores).
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import clickhouse_connect
 from clickhouse_connect.driver.client import Client
@@ -81,6 +83,55 @@ class _Registry:
 
 
 _registry: _Registry | None = None
+
+_USER_CONFIG_DIR = "mcp-clickhousex"
+_USER_CONFIG_FILENAME = "config.json"
+
+_JSON_PROFILE_KEYS: tuple[tuple[str, str], ...] = (
+    ("dsn", "dsn"),
+    ("description", "description"),
+    ("query_max_rows", "query_max_rows"),
+    ("query_command_timeout_seconds", "query_command_timeout_seconds"),
+)
+
+
+def _user_config_path() -> Path:
+    """Return path to user config (e.g. ~/.config/mcp-clickhousex/config.json)."""
+    return Path.home() / ".config" / _USER_CONFIG_DIR / _USER_CONFIG_FILENAME
+
+
+def _load_user_config() -> dict[str, dict[str, str]] | None:
+    """Load profiles from user config file. Return None if missing/invalid."""
+    path = _user_config_path()
+    if not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict) or "profiles" not in raw:
+        return None
+    profiles = raw["profiles"]
+    if not isinstance(profiles, dict):
+        return None
+    result: dict[str, dict[str, str]] = {}
+    for name, fields in profiles.items():
+        name_lower = name.lower() if isinstance(name, str) else ""
+        if not _PROFILE_NAME_RE.fullmatch(name_lower):
+            continue
+        if not isinstance(fields, dict):
+            continue
+        row: dict[str, str] = {}
+        for json_key, field_key in _JSON_PROFILE_KEYS:
+            if json_key not in fields:
+                continue
+            val = fields[json_key]
+            if val is None:
+                continue
+            row[field_key] = str(val)
+        if row:
+            result[name_lower] = row
+    return result if result else None
 
 
 def _parse_structured_profiles() -> dict[str, dict[str, str]]:
@@ -150,21 +201,19 @@ def _clamp_int(raw: str, default: int, max_val: int) -> int:
 
 
 def _resolve_profiles() -> _Registry:
-    """Merge structured + flat env vars into a registry (cached)."""
+    """Merge user config file, then structured env, then flat env (later wins)."""
+    file_profiles = _load_user_config() or {}
     structured = _parse_structured_profiles()
     flat = _build_default_from_flat()
 
-    merged: dict[str, dict[str, str]] = {}
+    merged: dict[str, dict[str, str]] = dict(file_profiles)
     for name, fields in structured.items():
-        merged[name] = dict(fields)
-
+        merged.setdefault(name, {}).update(fields)
     if flat:
-        default_raw = merged.get(DEFAULT_PROFILE_NAME, {})
-        default_raw.update(flat)
-        merged[DEFAULT_PROFILE_NAME] = default_raw
+        merged.setdefault(DEFAULT_PROFILE_NAME, {}).update(flat)
 
     if not merged:
-        merged[DEFAULT_PROFILE_NAME] = {"dsn": _DEFAULT_DSN}
+        merged = {DEFAULT_PROFILE_NAME: {"dsn": _DEFAULT_DSN}}
 
     registry = _Registry()
     for name, raw in merged.items():
