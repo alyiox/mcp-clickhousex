@@ -33,7 +33,7 @@ Flat vars create or override the **default** profile. This is all you need for a
 
 ```bash
 export MCP_CLICKHOUSE_DSN="http://user:password@host:8123/database"
-export MCP_CLICKHOUSE_DESCRIPTION="Primary cluster"                   # optional
+export MCP_CLICKHOUSE_DESCRIPTION="Primary cluster"                  # optional
 export MCP_CLICKHOUSE_QUERY_MAX_ROWS="5000"                          # default: 5000 (capped at 50000)
 export MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS="30"             # default: 30 (capped at 300)
 ```
