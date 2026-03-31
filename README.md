@@ -25,7 +25,7 @@ npx -y @modelcontextprotocol/inspector uv run main.py
 
 ## Configuration
 
-Connection and behavior are configured via environment variables. The server supports multiple named profiles and a backward-compatible flat layer for single-connection setups.
+Connection and behavior are configured via environment variables. The server supports multiple named profiles; for a single connection, flat env vars are a simple way to configure the default profile.
 
 ### Single connection (flat env vars)
 
