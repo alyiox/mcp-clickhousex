@@ -2,7 +2,7 @@
 
 import pytest
 
-from mcp_clickhousex.validation import validate_read_only
+from mcp_clickhousex.validation import validate_read_only, validate_show_statement
 
 
 class TestValidateReadOnly:
@@ -98,3 +98,60 @@ class TestValidateReadOnly:
     def test_write_ddl_rejected(self, sql: str) -> None:
         with pytest.raises(ValueError):
             validate_read_only(sql)
+
+
+class TestValidateShowStatement:
+    """validate_show_statement accepts SHOW and rejects other SQL."""
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SHOW DATABASES",
+            "  show tables from system  ",
+            "SHOW CREATE TABLE system.one",
+            "SHOW DATABASES;",
+        ],
+        ids=["databases", "tables_from_system", "create_table", "trailing_semicolon"],
+    )
+    def test_valid_show_passes(self, sql: str) -> None:
+        validate_show_statement(sql)
+
+    @pytest.mark.parametrize("sql", ["", "   "])
+    def test_empty_rejected(self, sql: str) -> None:
+        with pytest.raises(ValueError, match="empty"):
+            validate_show_statement(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SHOW DATABASES; SHOW TABLES",
+            "SHOW DATABASES; SELECT 1",
+        ],
+    )
+    def test_multiple_statements_rejected(self, sql: str) -> None:
+        with pytest.raises(ValueError, match="Multiple"):
+            validate_show_statement(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SHOW DATABASES INTO OUTFILE '/tmp/x'",
+            "show tables into outfile 'y'",
+        ],
+    )
+    def test_into_outfile_rejected(self, sql: str) -> None:
+        with pytest.raises(ValueError, match="INTO OUTFILE"):
+            validate_show_statement(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1",
+            "INSERT INTO t VALUES (1)",
+            "WITH c AS (SELECT 1) SELECT * FROM c",
+        ],
+        ids=["select", "insert", "with_select"],
+    )
+    def test_non_show_rejected(self, sql: str) -> None:
+        with pytest.raises(ValueError, match="Only SHOW"):
+            validate_show_statement(sql)

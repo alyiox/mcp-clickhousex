@@ -76,6 +76,31 @@ def run_query(
 
 
 @mcp.tool()
+def run_show(
+    sql: Annotated[
+        str,
+        Field(description="Single SHOW statement."),
+    ],
+    parameters: Annotated[
+        dict[str, Any] | None,
+        Field(description="Optional query parameter values keyed by name."),
+    ] = None,
+    database: Annotated[
+        str | None,
+        Field(description="Optional default database. Src: databases."),
+    ] = None,
+    profile: Annotated[
+        str | None,
+        Field(description="Optional profile name. Src: profiles."),
+    ] = None,
+) -> QueryResultModel:
+    """[ClickHouse] Execute SHOW introspection SQL."""
+    return query.run_show(
+        sql, parameters=parameters, database=database, profile=profile
+    )
+
+
+@mcp.tool()
 def analyze_query(
     sql: Annotated[
         str,

@@ -47,6 +47,25 @@ class TestToolSchemasE2E:
         )
 
     @pytest.mark.anyio
+    async def test_run_show_schema_includes_parameter_descriptions(
+        self, client
+    ) -> None:
+        result = await client.list_tools()
+        tool = _tool_by_name(result, "run_show")
+        assert tool.description == "[ClickHouse] Execute SHOW introspection SQL."
+        props = tool.inputSchema["properties"]
+        assert props["sql"]["description"] == "Single SHOW statement."
+        assert props["parameters"]["description"] == (
+            "Optional query parameter values keyed by name."
+        )
+        assert props["database"]["description"] == (
+            "Optional default database. Src: databases."
+        )
+        assert props["profile"]["description"] == (
+            "Optional profile name. Src: profiles."
+        )
+
+    @pytest.mark.anyio
     async def test_output_schemas_match_typed_models(self, client) -> None:
         result = await client.list_tools()
 
@@ -56,6 +75,13 @@ class TestToolSchemasE2E:
         assert output_props["rows"]["type"] == "array"
         assert output_props["truncated"]["anyOf"][0]["type"] == "boolean"
         assert output_props["row_limit"]["anyOf"][0]["type"] == "integer"
+
+        run_show_tool = _tool_by_name(result, "run_show")
+        show_props = run_show_tool.outputSchema["properties"]
+        assert show_props["columns"]["type"] == "array"
+        assert show_props["rows"]["type"] == "array"
+        assert show_props["truncated"]["anyOf"][0]["type"] == "boolean"
+        assert show_props["row_limit"]["anyOf"][0]["type"] == "integer"
 
         analyze_tool = _tool_by_name(result, "analyze_query")
         analyze_props = analyze_tool.outputSchema["properties"]
@@ -112,6 +138,25 @@ class TestRunQueryE2E:
     @pytest.mark.anyio
     async def test_rejects_empty(self, client) -> None:
         result = await client.call_tool("run_query", {"sql": ""})
+        assert result.isError
+
+
+# -- run_show ------------------------------------------------------------------
+
+
+class TestRunShowE2E:
+    @pytest.mark.anyio
+    async def test_show_databases(self, client) -> None:
+        result = await client.call_tool("run_show", {"sql": "SHOW DATABASES"})
+        assert not result.isError
+        data = _parse_text(result)
+        assert "name" in data["columns"]
+        names = [row[data["columns"].index("name")] for row in data["rows"]]
+        assert "default" in names
+
+    @pytest.mark.anyio
+    async def test_rejects_select(self, client) -> None:
+        result = await client.call_tool("run_show", {"sql": "SELECT 1"})
         assert result.isError
 
 

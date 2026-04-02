@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp_clickhousex.config import get_client, get_command_timeout, get_max_rows
 from mcp_clickhousex.models import ExplainResultModel, QueryResultModel
-from mcp_clickhousex.validation import validate_read_only
+from mcp_clickhousex.validation import validate_read_only, validate_show_statement
 
 _ALLOWED_EXPLAIN_TYPES = frozenset({"plan", "pipeline", "syntax"})
 _DEFAULT_EXPLAIN_TYPES: list[str] = ["plan", "pipeline"]
@@ -40,6 +40,53 @@ def run_query(
     max_rows = get_max_rows(profile)
     timeout = get_command_timeout(profile)
     settings: dict[str, Any] = {
+        # +1 so we can detect truncation: max_rows+1 returned means more rows existed.
+        "max_result_rows": max_rows + 1,
+        "result_overflow_mode": "break",
+        "max_execution_time": timeout,
+    }
+    if database:
+        settings["database"] = database
+
+    result = client.query(sql, parameters=parameters, settings=settings)
+
+    columns = list(result.column_names)
+    rows = [list(row) for row in result.result_rows]
+
+    truncated = len(rows) > max_rows
+    if truncated:
+        rows = rows[:max_rows]
+
+    return QueryResultModel(
+        columns=columns,
+        rows=rows,
+        truncated=True if truncated else None,
+        row_limit=max_rows if truncated else None,
+    )
+
+
+def run_show(
+    sql: str,
+    parameters: dict[str, Any] | None = None,
+    database: str | None = None,
+    profile: str | None = None,
+) -> QueryResultModel:
+    """Execute a SHOW statement and return ``{columns, rows}``.
+
+    Applies the profile's max_rows limit via ClickHouse max_result_rows;
+    if the result exceeds the limit, rows are truncated and ``truncated``
+    is set to true.
+    """
+    validate_show_statement(sql)
+
+    client = get_client(profile)
+    if parameters is None:
+        parameters = {}
+
+    max_rows = get_max_rows(profile)
+    timeout = get_command_timeout(profile)
+    settings: dict[str, Any] = {
+        # +1 so we can detect truncation: max_rows+1 returned means more rows existed.
         "max_result_rows": max_rows + 1,
         "result_overflow_mode": "break",
         "max_execution_time": timeout,

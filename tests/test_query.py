@@ -5,7 +5,7 @@ import os
 import pytest
 
 from mcp_clickhousex.config import reset_registry
-from mcp_clickhousex.query import analyze_query, run_query
+from mcp_clickhousex.query import analyze_query, run_query, run_show
 
 
 def _result_dict(result):
@@ -81,6 +81,56 @@ class TestRunQuery:
             )
             assert result["columns"] == ["n"]
             assert len(result["rows"]) <= 2
+        finally:
+            if old is None:
+                os.environ.pop("MCP_CLICKHOUSE_QUERY_MAX_ROWS", None)
+            else:
+                os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = old
+            reset_registry()
+
+
+class TestRunShow:
+    def test_show_databases(self) -> None:
+        result = _result_dict(run_show("SHOW DATABASES"))
+        assert "columns" in result
+        assert "rows" in result
+        assert "name" in result["columns"]
+        names = [row[result["columns"].index("name")] for row in result["rows"]]
+        assert "default" in names
+
+    def test_show_tables_respects_database_setting(self) -> None:
+        result = _result_dict(run_show("SHOW TABLES", database="system"))
+        assert "name" in result["columns"]
+        names = [row[result["columns"].index("name")] for row in result["rows"]]
+        assert "tables" in names
+        assert "numbers" in names
+
+    def test_rejects_select(self) -> None:
+        with pytest.raises(ValueError, match="Only SHOW"):
+            run_show("SELECT 1")
+
+    def test_rejects_into_outfile(self) -> None:
+        with pytest.raises(ValueError, match="INTO OUTFILE"):
+            run_show("SHOW DATABASES INTO OUTFILE '/tmp/x'")
+
+    def test_rejects_empty(self) -> None:
+        with pytest.raises(ValueError, match="empty"):
+            run_show("")
+
+    def test_rejects_multiple_statements(self) -> None:
+        with pytest.raises(ValueError, match="Multiple"):
+            run_show("SHOW DATABASES; SHOW TABLES")
+
+    def test_max_rows_applied(self) -> None:
+        old = os.environ.get("MCP_CLICKHOUSE_QUERY_MAX_ROWS")
+        try:
+            os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = "2"
+            reset_registry()
+            result = _result_dict(run_show("SHOW TABLES FROM system"))
+            assert result["columns"] == ["name"]
+            assert len(result["rows"]) <= 2
+            assert result.get("truncated") is True
+            assert result.get("row_limit") == 2
         finally:
             if old is None:
                 os.environ.pop("MCP_CLICKHOUSE_QUERY_MAX_ROWS", None)
