@@ -7,13 +7,13 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
-class MCPModel(BaseModel):
+class MCPBase(BaseModel):
     """Base model for server-facing MCP payloads."""
 
     model_config = ConfigDict(extra="forbid")
 
 
-class ProfileModel(MCPModel):
+class Profile(MCPBase):
     """Summary information for one configured ClickHouse profile."""
 
     name: str = Field(description="Profile name, for example 'default' or 'warehouse'.")
@@ -23,7 +23,7 @@ class ProfileModel(MCPModel):
     )
 
 
-class OptionDescriptor[T](MCPModel):
+class OptionDescriptor[T](MCPBase):
     """Describes an effective server option and how it is enforced."""
 
     value: T = Field(description="Effective value enforced by the server.")
@@ -36,7 +36,7 @@ class OptionDescriptor[T](MCPModel):
     scope: str = Field(description="Logical scope in which this option applies.")
 
 
-class QueryLimitsModel(MCPModel):
+class QueryLimits(MCPBase):
     """Execution limits applied to read-only queries."""
 
     max_rows: OptionDescriptor[int]
@@ -44,20 +44,20 @@ class QueryLimitsModel(MCPModel):
     command_timeout_seconds: OptionDescriptor[int]
 
 
-class ExecutionLimitsModel(MCPModel):
+class ExecutionLimits(MCPBase):
     """Server-enforced execution policies."""
 
-    query: QueryLimitsModel
+    query: QueryLimits
 
 
-class ClusterPropertiesModel(MCPModel):
+class ClusterProperties(MCPBase):
     """ClickHouse cluster metadata safe to surface to MCP clients."""
 
     version: str = Field(description="ClickHouse server version string.")
-    limits: ExecutionLimitsModel
+    limits: ExecutionLimits
 
 
-class TabularResultModel(MCPModel):
+class TabularResult(MCPBase):
     """Generic tabular result with ordered columns and aligned row values."""
 
     columns: list[str] = Field(
@@ -70,7 +70,7 @@ class TabularResultModel(MCPModel):
     )
 
 
-class QueryResultModel(TabularResultModel):
+class QueryResult(TabularResult):
     """Result of an interactive read-only SQL query."""
 
     truncated: bool | None = Field(
@@ -90,7 +90,7 @@ class QueryResultModel(TabularResultModel):
         return {key: value for key, value in data.items() if value is not None}
 
 
-class ExplainResultModel(MCPModel):
+class ExplainResult(MCPBase):
     """Structured EXPLAIN text output keyed by explain type."""
 
     plan: str | None = Field(default=None, description="EXPLAIN PLAN output.")

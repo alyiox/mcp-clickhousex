@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from mcp_clickhousex.config import get_client, get_command_timeout, get_max_rows
-from mcp_clickhousex.models import ExplainResultModel, QueryResultModel
+from mcp_clickhousex.models import ExplainResult, QueryResult
 from mcp_clickhousex.validation import validate_read_only, validate_show_statement
 
 _ALLOWED_EXPLAIN_TYPES = frozenset({"plan", "pipeline", "syntax"})
@@ -24,7 +24,7 @@ def run_query(
     parameters: dict[str, Any] | None = None,
     database: str | None = None,
     profile: str | None = None,
-) -> QueryResultModel:
+) -> QueryResult:
     """Execute a read-only SELECT and return ``{columns, rows}``.
 
     Applies the profile's max_rows limit via ClickHouse max_result_rows;
@@ -57,7 +57,7 @@ def run_query(
     if truncated:
         rows = rows[:max_rows]
 
-    return QueryResultModel(
+    return QueryResult(
         columns=columns,
         rows=rows,
         truncated=True if truncated else None,
@@ -70,7 +70,7 @@ def run_show(
     parameters: dict[str, Any] | None = None,
     database: str | None = None,
     profile: str | None = None,
-) -> QueryResultModel:
+) -> QueryResult:
     """Execute a SHOW statement and return ``{columns, rows}``.
 
     Applies the profile's max_rows limit via ClickHouse max_result_rows;
@@ -103,7 +103,7 @@ def run_show(
     if truncated:
         rows = rows[:max_rows]
 
-    return QueryResultModel(
+    return QueryResult(
         columns=columns,
         rows=rows,
         truncated=True if truncated else None,
@@ -117,7 +117,7 @@ def analyze_query(
     database: str | None = None,
     profile: str | None = None,
     types: Sequence[str] | None = None,
-) -> ExplainResultModel:
+) -> ExplainResult:
     """Run EXPLAIN variants on a read-only SELECT and return text results."""
     validate_read_only(sql)
 
@@ -146,4 +146,4 @@ def analyze_query(
         result = client.query(explain_sql, parameters=parameters, settings=settings)
         out[t] = "\n".join(str(row[0]) for row in result.result_rows)
 
-    return ExplainResultModel(**out)
+    return ExplainResult(**out)

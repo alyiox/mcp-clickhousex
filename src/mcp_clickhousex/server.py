@@ -15,11 +15,11 @@ from mcp_clickhousex.cluster_properties import (
 )
 from mcp_clickhousex.config import get_profiles
 from mcp_clickhousex.models import (
-    ClusterPropertiesModel,
-    ExplainResultModel,
-    ProfileModel,
-    QueryResultModel,
-    TabularResultModel,
+    ClusterProperties,
+    ExplainResult,
+    Profile,
+    QueryResult,
+    TabularResult,
 )
 
 mcp = FastMCP("mcp-clickhousex", json_response=True)
@@ -34,7 +34,7 @@ def main() -> None:
 
 
 @mcp.tool()
-def list_profiles() -> list[ProfileModel]:
+def list_profiles() -> list[Profile]:
     """[ClickHouse] List configured profiles.
 
     Each entry includes name and optional description.
@@ -52,7 +52,7 @@ def get_cluster_properties(
             ),
         ),
     ] = None,
-) -> ClusterPropertiesModel:
+) -> ClusterProperties:
     """[ClickHouse] Get cluster properties and execution limits.
 
     Returns ClickHouse server version plus enforced limits (max rows,
@@ -97,7 +97,7 @@ def run_query(
             ),
         ),
     ] = None,
-) -> QueryResultModel:
+) -> QueryResult:
     """[ClickHouse] Execute read-only SELECT or WITH … SELECT.
 
     One statement; DML, DDL, SET, SYSTEM, and similar are rejected.
@@ -145,7 +145,7 @@ def run_show(
             ),
         ),
     ] = None,
-) -> QueryResultModel:
+) -> QueryResult:
     """[ClickHouse] Execute SHOW introspection statement.
 
     One statement per call; INTO OUTFILE rejected. Same max-rows cap and
@@ -201,7 +201,7 @@ def analyze_query(
             ),
         ),
     ] = None,
-) -> ExplainResultModel:
+) -> ExplainResult:
     """[ClickHouse] Explain read-only SELECT or WITH … SELECT.
 
     Returns plan, pipeline, and/or syntax text. Default types plan and
@@ -223,7 +223,7 @@ def list_databases(
             ),
         ),
     ] = None,
-) -> TabularResultModel:
+) -> TabularResult:
     """[ClickHouse] List databases.
 
     Rows from system.databases visible to the connection.
@@ -249,7 +249,7 @@ def list_tables(
             ),
         ),
     ] = None,
-) -> TabularResultModel:
+) -> TabularResult:
     """[ClickHouse] List tables and views in a database.
 
     Rows from system.tables: name, engine, primary_key, sorting_key,
@@ -283,7 +283,7 @@ def list_columns(
             ),
         ),
     ] = None,
-) -> TabularResultModel:
+) -> TabularResult:
     """[ClickHouse] List columns for a table or view.
 
     Rows from system.columns for the resolved database and table.
@@ -303,7 +303,7 @@ def list_columns(
     ),
     mime_type="application/json",
 )
-def resource_profiles() -> list[ProfileModel]:
+def resource_profiles() -> list[Profile]:
     """[ClickHouse] List configured profiles.
 
     Each entry includes name and optional description.
@@ -321,7 +321,7 @@ def resource_profiles() -> list[ProfileModel]:
     ),
     mime_type="application/json",
 )
-def resource_cluster_properties_for_profile(profile: str) -> ClusterPropertiesModel:
+def resource_cluster_properties_for_profile(profile: str) -> ClusterProperties:
     """[ClickHouse] Get cluster properties and execution limits.
 
     Returns ClickHouse server version plus enforced limits (max rows,
@@ -339,7 +339,7 @@ def resource_cluster_properties_for_profile(profile: str) -> ClusterPropertiesMo
     ),
     mime_type="application/json",
 )
-def resource_databases_for_profile(profile: str) -> TabularResultModel:
+def resource_databases_for_profile(profile: str) -> TabularResult:
     """[ClickHouse] List databases.
 
     Rows from system.databases visible to the connection. Src: profiles.
@@ -358,9 +358,7 @@ def resource_databases_for_profile(profile: str) -> TabularResultModel:
     ),
     mime_type="application/json",
 )
-def resource_tables_for_profile_database(
-    profile: str, database: str
-) -> TabularResultModel:
+def resource_tables_for_profile_database(profile: str, database: str) -> TabularResult:
     """[ClickHouse] List tables and views in a database.
 
     Rows from system.tables: name, engine, primary_key, sorting_key,
@@ -382,7 +380,7 @@ def resource_tables_for_profile_database(
 )
 def resource_columns_for_profile_database_table(
     profile: str, database: str, table: str
-) -> TabularResultModel:
+) -> TabularResult:
     """[ClickHouse] List columns for a table or view.
 
     Rows from system.columns for the resolved database and table.

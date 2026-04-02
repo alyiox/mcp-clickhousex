@@ -35,10 +35,10 @@ import clickhouse_connect
 from clickhouse_connect.driver.client import Client
 
 from mcp_clickhousex.models import (
-    ExecutionLimitsModel,
+    ExecutionLimits,
     OptionDescriptor,
-    ProfileModel,
-    QueryLimitsModel,
+    Profile,
+    QueryLimits,
 )
 
 DEFAULT_PROFILE_NAME = "default"
@@ -254,11 +254,11 @@ def _lookup(profile: str | None) -> tuple[str, _ProfileData]:
 # -- Public API ----------------------------------------------------------------
 
 
-def get_profiles() -> list[ProfileModel]:
+def get_profiles() -> list[Profile]:
     """Return all configured profiles with name and description."""
     reg = _get_registry()
     return [
-        ProfileModel(name=name, description=data.description)
+        Profile(name=name, description=data.description)
         for name, data in reg.profiles.items()
     ]
 
@@ -273,11 +273,11 @@ def get_client(profile: str | None = None) -> Client:
     return clickhouse_connect.get_client(dsn=dsn)
 
 
-def get_limits(profile: str | None = None) -> ExecutionLimitsModel:
+def get_limits(profile: str | None = None) -> ExecutionLimits:
     """Return execution limits for the given profile."""
     _, data = _lookup(profile)
-    return ExecutionLimitsModel(
-        query=QueryLimitsModel(
+    return ExecutionLimits(
+        query=QueryLimits(
             max_rows=OptionDescriptor[int](
                 value=data.query_max_rows,
                 description="Row cap applied to every query. Use LIMIT for pagination.",
