@@ -1,1 +1,1 @@
-# Tests for mcp-clickhouse.
+# Tests for mcp-clickhousex.

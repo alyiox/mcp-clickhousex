@@ -1,6 +1,6 @@
 # MCP ClickHouse Tool
 
-[![Build Status](https://github.com/alyiox/mcp-clickhouse/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alyiox/mcp-clickhouse/actions/workflows/ci.yml)
+[![Build Status](https://github.com/alyiox/mcp-clickhousex/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alyiox/mcp-clickhousex/actions/workflows/ci.yml)
 [![PyPI Version](https://img.shields.io/pypi/v/mcp-clickhousex.svg)](https://pypi.org/project/mcp-clickhousex/)
 
 A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse that supports metadata discovery, resources, parameterized `SELECT` queries, [`SHOW`](https://clickhouse.com/docs/sql-reference/statements/show) introspection, and query analysis, with profile-based configuration and strict no-DML/DDL enforcement.

@@ -22,11 +22,11 @@ from mcp_clickhousex.models import (
     TabularResultModel,
 )
 
-mcp = FastMCP("mcp-clickhouse", json_response=True)
+mcp = FastMCP("mcp-clickhousex", json_response=True)
 
 
 def main() -> None:
-    """CLI entrypoint for ``uvx mcp-clickhouse``."""
+    """CLI entrypoint for ``uvx mcp-clickhousex``."""
     if "--version" in sys.argv or "-V" in sys.argv:
         print(version("mcp-clickhousex"))
         return
