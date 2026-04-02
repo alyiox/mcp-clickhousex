@@ -35,7 +35,10 @@ def main() -> None:
 
 @mcp.tool()
 def list_profiles() -> list[ProfileModel]:
-    """[ClickHouse] List configured profiles."""
+    """[ClickHouse] List configured profiles.
+
+    Each entry includes name and optional description.
+    """
     return get_profiles()
 
 
@@ -43,10 +46,18 @@ def list_profiles() -> list[ProfileModel]:
 def get_cluster_properties(
     profile: Annotated[
         str | None,
-        Field(description="Optional profile name. Src: profiles."),
+        Field(
+            description=(
+                "Profile name; uses default profile when omitted. Src: profiles."
+            ),
+        ),
     ] = None,
 ) -> ClusterPropertiesModel:
-    """[ClickHouse] Get cluster properties and execution limits."""
+    """[ClickHouse] Get cluster properties and execution limits.
+
+    Returns ClickHouse server version plus enforced limits (max rows,
+    timeouts) for the profile.
+    """
     return get_cluster_properties_impl(profile)
 
 
@@ -54,22 +65,45 @@ def get_cluster_properties(
 def run_query(
     sql: Annotated[
         str,
-        Field(description="Read-only SELECT statement."),
+        Field(
+            description=(
+                "Read-only SELECT or WITH … SELECT. One statement; use qualified "
+                "db.table or database. Driver placeholder syntax for parameters."
+            ),
+        ),
     ],
     parameters: Annotated[
         dict[str, Any] | None,
-        Field(description="Optional query parameter values keyed by name."),
+        Field(
+            description=(
+                "Named parameters for driver placeholders "
+                "(e.g. %(name)s or {name:Type})."
+            ),
+        ),
     ] = None,
     database: Annotated[
         str | None,
-        Field(description="Optional default database. Src: databases."),
+        Field(
+            description=(
+                "Session default database for unqualified names. Src: databases."
+            ),
+        ),
     ] = None,
     profile: Annotated[
         str | None,
-        Field(description="Optional profile name. Src: profiles."),
+        Field(
+            description=(
+                "Profile name; uses default profile when omitted. Src: profiles."
+            ),
+        ),
     ] = None,
 ) -> QueryResultModel:
-    """[ClickHouse] Execute read-only SQL."""
+    """[ClickHouse] Execute read-only SELECT or WITH … SELECT.
+
+    One statement; DML, DDL, SET, SYSTEM, and similar are rejected.
+    Max-rows cap; overflow sets truncated and row_limit. Same SQL
+    validation as analyze_query.
+    """
     return query.run_query(
         sql, parameters=parameters, database=database, profile=profile
     )
@@ -79,22 +113,44 @@ def run_query(
 def run_show(
     sql: Annotated[
         str,
-        Field(description="Single SHOW statement."),
+        Field(
+            description=(
+                "Single SHOW statement (e.g. SHOW DATABASES, SHOW CREATE TABLE). "
+                "No INTO OUTFILE."
+            ),
+        ),
     ],
     parameters: Annotated[
         dict[str, Any] | None,
-        Field(description="Optional query parameter values keyed by name."),
+        Field(
+            description=(
+                "Named parameters for driver placeholders "
+                "(e.g. %(name)s or {name:Type})."
+            ),
+        ),
     ] = None,
     database: Annotated[
         str | None,
-        Field(description="Optional default database. Src: databases."),
+        Field(
+            description=(
+                "Session default database for unqualified names. Src: databases."
+            ),
+        ),
     ] = None,
     profile: Annotated[
         str | None,
-        Field(description="Optional profile name. Src: profiles."),
+        Field(
+            description=(
+                "Profile name; uses default profile when omitted. Src: profiles."
+            ),
+        ),
     ] = None,
 ) -> QueryResultModel:
-    """[ClickHouse] Execute SHOW introspection SQL."""
+    """[ClickHouse] Execute SHOW introspection statement.
+
+    One statement per call; INTO OUTFILE rejected. Same max-rows cap and
+    timeout behavior as run_query.
+    """
     return query.run_show(
         sql, parameters=parameters, database=database, profile=profile
     )
@@ -104,26 +160,54 @@ def run_show(
 def analyze_query(
     sql: Annotated[
         str,
-        Field(description="Read-only SELECT statement."),
+        Field(
+            description=(
+                "Read-only SELECT or WITH … SELECT for EXPLAIN. One statement; "
+                "same validation as run_query."
+            ),
+        ),
     ],
     parameters: Annotated[
         dict[str, Any] | None,
-        Field(description="Optional query parameter values keyed by name."),
+        Field(
+            description=(
+                "Named parameters for driver placeholders "
+                "(e.g. %(name)s or {name:Type})."
+            ),
+        ),
     ] = None,
     database: Annotated[
         str | None,
-        Field(description="Optional default database. Src: databases."),
+        Field(
+            description=(
+                "Session default database for unqualified names. Src: databases."
+            ),
+        ),
     ] = None,
     profile: Annotated[
         str | None,
-        Field(description="Optional profile name. Src: profiles."),
+        Field(
+            description=(
+                "Profile name; uses default profile when omitted. Src: profiles."
+            ),
+        ),
     ] = None,
     types: Annotated[
         list[Literal["plan", "pipeline", "syntax"]] | None,
-        Field(description="Optional EXPLAIN output types to include."),
+        Field(
+            description=(
+                "EXPLAIN variants: plan (indexes), pipeline, syntax. "
+                "Default plan and pipeline if omitted."
+            ),
+        ),
     ] = None,
 ) -> ExplainResultModel:
-    """[ClickHouse] Analyze query execution plan."""
+    """[ClickHouse] Explain read-only SELECT or WITH … SELECT.
+
+    Returns plan, pipeline, and/or syntax text. Default types plan and
+    pipeline. Uses query timeout and optional database; no max-rows cap
+    unlike run_query.
+    """
     return query.analyze_query(
         sql, parameters=parameters, database=database, profile=profile, types=types
     )
@@ -133,10 +217,17 @@ def analyze_query(
 def list_databases(
     profile: Annotated[
         str | None,
-        Field(description="Optional profile name. Src: profiles."),
+        Field(
+            description=(
+                "Profile name; uses default profile when omitted. Src: profiles."
+            ),
+        ),
     ] = None,
 ) -> TabularResultModel:
-    """[ClickHouse] List databases."""
+    """[ClickHouse] List databases.
+
+    Rows from system.databases visible to the connection.
+    """
     return metadata.list_databases(profile=profile)
 
 
@@ -144,17 +235,25 @@ def list_databases(
 def list_tables(
     database: Annotated[
         str | None,
-        Field(description="Optional database name. Src: databases."),
+        Field(
+            description=(
+                "Database to list; client default when omitted. Src: databases."
+            ),
+        ),
     ] = None,
     profile: Annotated[
         str | None,
-        Field(description="Optional profile name. Src: profiles."),
+        Field(
+            description=(
+                "Profile name; uses default profile when omitted. Src: profiles."
+            ),
+        ),
     ] = None,
 ) -> TabularResultModel:
     """[ClickHouse] List tables and views in a database.
 
-    Returns name, engine, primary_key, sorting_key, partition_key,
-    total_rows, total_bytes for query analysis.
+    Rows from system.tables: name, engine, primary_key, sorting_key,
+    partition_key, total_rows, total_bytes for query planning.
     """
     return metadata.list_tables(database, profile=profile)
 
@@ -164,21 +263,31 @@ def list_columns(
     table: Annotated[
         str,
         Field(
-            description=(
-                "Table name; may be qualified as `database.table`. Src: tables."
-            )
+            description=("Table or view name, or database.table. Src: tables."),
         ),
     ],
     database: Annotated[
         str | None,
-        Field(description="Optional database name. Src: databases."),
+        Field(
+            description=(
+                "Database when table is unqualified; ignored if table "
+                "contains a dot. Client default when omitted. Src: databases."
+            ),
+        ),
     ] = None,
     profile: Annotated[
         str | None,
-        Field(description="Optional profile name. Src: profiles."),
+        Field(
+            description=(
+                "Profile name; uses default profile when omitted. Src: profiles."
+            ),
+        ),
     ] = None,
 ) -> TabularResultModel:
-    """[ClickHouse] List columns for a table or view."""
+    """[ClickHouse] List columns for a table or view.
+
+    Rows from system.columns for the resolved database and table.
+    """
     return metadata.list_columns(table, database, profile=profile)
 
 
@@ -188,57 +297,95 @@ def list_columns(
 @mcp.resource(
     "clickhouse://profiles",
     name="profiles",
-    description="[ClickHouse] List configured profiles.",
+    description=(
+        "[ClickHouse] List configured profiles. "
+        "Each entry includes name and optional description."
+    ),
     mime_type="application/json",
 )
 def resource_profiles() -> list[ProfileModel]:
-    """[ClickHouse] List configured profiles."""
+    """[ClickHouse] List configured profiles.
+
+    Each entry includes name and optional description.
+    """
     return get_profiles()
 
 
 @mcp.resource(
     "clickhouse://profiles/{profile}/cluster-properties",
     name="cluster-properties",
-    description="[ClickHouse] Cluster properties and limits. Src: profiles.",
+    description=(
+        "[ClickHouse] Get cluster properties and execution limits. "
+        "Returns ClickHouse server version plus enforced limits (max rows, "
+        "timeouts) for the profile. Src: profiles."
+    ),
     mime_type="application/json",
 )
 def resource_cluster_properties_for_profile(profile: str) -> ClusterPropertiesModel:
-    """[ClickHouse] Get cluster properties for profile. Src: profiles."""
+    """[ClickHouse] Get cluster properties and execution limits.
+
+    Returns ClickHouse server version plus enforced limits (max rows,
+    timeouts) for the profile. Src: profiles.
+    """
     return get_cluster_properties_impl(profile)
 
 
 @mcp.resource(
     "clickhouse://profiles/{profile}/databases",
     name="databases",
-    description="[ClickHouse] List databases for profile. Src: profiles.",
+    description=(
+        "[ClickHouse] List databases. "
+        "Rows from system.databases visible to the connection. Src: profiles."
+    ),
     mime_type="application/json",
 )
 def resource_databases_for_profile(profile: str) -> TabularResultModel:
-    """[ClickHouse] List databases for profile. Src: profiles."""
+    """[ClickHouse] List databases.
+
+    Rows from system.databases visible to the connection. Src: profiles.
+    """
     return metadata.list_databases(profile=profile)
 
 
 @mcp.resource(
     "clickhouse://profiles/{profile}/databases/{database}/tables",
     name="tables",
-    description="[ClickHouse] List tables for profile and db. Src: profiles, dbs.",
+    description=(
+        "[ClickHouse] List tables and views in a database. "
+        "Rows from system.tables: name, engine, primary_key, sorting_key, "
+        "partition_key, total_rows, total_bytes for query planning. "
+        "Src: profiles, dbs."
+    ),
     mime_type="application/json",
 )
 def resource_tables_for_profile_database(
     profile: str, database: str
 ) -> TabularResultModel:
-    """[ClickHouse] List tables for profile and database. Src: profiles, dbs."""
+    """[ClickHouse] List tables and views in a database.
+
+    Rows from system.tables: name, engine, primary_key, sorting_key,
+    partition_key, total_rows, total_bytes for query planning.
+    Src: profiles, dbs.
+    """
     return metadata.list_tables(database, profile=profile)
 
 
 @mcp.resource(
     "clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns",
     name="table-columns",
-    description="[ClickHouse] List columns (profile+db). Src: profiles, dbs, tables.",
+    description=(
+        "[ClickHouse] List columns for a table or view. "
+        "Rows from system.columns for the resolved database and table. "
+        "Src: profiles, dbs, tables."
+    ),
     mime_type="application/json",
 )
 def resource_columns_for_profile_database_table(
     profile: str, database: str, table: str
 ) -> TabularResultModel:
-    """[ClickHouse] List columns for table in profile+db. Src: profiles, dbs."""
+    """[ClickHouse] List columns for a table or view.
+
+    Rows from system.columns for the resolved database and table.
+    Src: profiles, dbs, tables.
+    """
     return metadata.list_columns(table, database, profile=profile)

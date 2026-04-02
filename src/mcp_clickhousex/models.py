@@ -19,7 +19,7 @@ class ProfileModel(MCPModel):
     name: str = Field(description="Profile name, for example 'default' or 'warehouse'.")
     description: str | None = Field(
         default=None,
-        description="Optional human- or agent-facing description of the profile.",
+        description="Human- or agent-facing description of the profile.",
     )
 
 

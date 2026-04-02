@@ -1,11 +1,22 @@
 """End-to-end tests: exercise the MCP tools through in-memory transport."""
 
+import inspect
 import json
 
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from mcp_clickhousex.server import mcp
+from mcp_clickhousex.server import (
+    analyze_query,
+    get_cluster_properties,
+    list_columns,
+    list_databases,
+    list_profiles,
+    list_tables,
+    mcp,
+    run_query,
+    run_show,
+)
 
 
 @pytest.fixture()
@@ -23,27 +34,53 @@ def _tool_by_name(tools_result, name: str):
     return next(tool for tool in tools_result.tools if tool.name == name)
 
 
+def _tool_description_matches_doc(fn, tool_description: str | None) -> bool:
+    """MCP may append a trailing newline; normalize against inspect.getdoc."""
+    doc = inspect.getdoc(fn) or ""
+    return (tool_description or "").strip() == doc.strip()
+
+
 # -- tool schemas --------------------------------------------------------------
 
 
 class TestToolSchemasE2E:
+    @pytest.mark.anyio
+    async def test_tool_descriptions_match_function_docstrings(self, client) -> None:
+        pairs = [
+            ("list_profiles", list_profiles),
+            ("get_cluster_properties", get_cluster_properties),
+            ("run_query", run_query),
+            ("run_show", run_show),
+            ("analyze_query", analyze_query),
+            ("list_databases", list_databases),
+            ("list_tables", list_tables),
+            ("list_columns", list_columns),
+        ]
+        result = await client.list_tools()
+        by_name = {t.name: t for t in result.tools}
+        for name, fn in pairs:
+            assert _tool_description_matches_doc(fn, by_name[name].description), name
+
     @pytest.mark.anyio
     async def test_run_query_schema_includes_parameter_descriptions(
         self, client
     ) -> None:
         result = await client.list_tools()
         tool = _tool_by_name(result, "run_query")
-        assert tool.description == "[ClickHouse] Execute read-only SQL."
+        assert _tool_description_matches_doc(run_query, tool.description)
         props = tool.inputSchema["properties"]
-        assert props["sql"]["description"] == "Read-only SELECT statement."
+        assert props["sql"]["description"] == (
+            "Read-only SELECT or WITH … SELECT. One statement; use qualified "
+            "db.table or database. Driver placeholder syntax for parameters."
+        )
         assert props["parameters"]["description"] == (
-            "Optional query parameter values keyed by name."
+            "Named parameters for driver placeholders (e.g. %(name)s or {name:Type})."
         )
         assert props["database"]["description"] == (
-            "Optional default database. Src: databases."
+            "Session default database for unqualified names. Src: databases."
         )
         assert props["profile"]["description"] == (
-            "Optional profile name. Src: profiles."
+            "Profile name; uses default profile when omitted. Src: profiles."
         )
 
     @pytest.mark.anyio
@@ -52,17 +89,78 @@ class TestToolSchemasE2E:
     ) -> None:
         result = await client.list_tools()
         tool = _tool_by_name(result, "run_show")
-        assert tool.description == "[ClickHouse] Execute SHOW introspection SQL."
+        assert _tool_description_matches_doc(run_show, tool.description)
         props = tool.inputSchema["properties"]
-        assert props["sql"]["description"] == "Single SHOW statement."
+        assert props["sql"]["description"] == (
+            "Single SHOW statement (e.g. SHOW DATABASES, SHOW CREATE TABLE). "
+            "No INTO OUTFILE."
+        )
         assert props["parameters"]["description"] == (
-            "Optional query parameter values keyed by name."
+            "Named parameters for driver placeholders (e.g. %(name)s or {name:Type})."
         )
         assert props["database"]["description"] == (
-            "Optional default database. Src: databases."
+            "Session default database for unqualified names. Src: databases."
         )
         assert props["profile"]["description"] == (
-            "Optional profile name. Src: profiles."
+            "Profile name; uses default profile when omitted. Src: profiles."
+        )
+
+    @pytest.mark.anyio
+    async def test_analyze_query_schema_includes_parameter_descriptions(
+        self, client
+    ) -> None:
+        result = await client.list_tools()
+        tool = _tool_by_name(result, "analyze_query")
+        assert _tool_description_matches_doc(analyze_query, tool.description)
+        props = tool.inputSchema["properties"]
+        assert props["sql"]["description"] == (
+            "Read-only SELECT or WITH … SELECT for EXPLAIN. One statement; "
+            "same validation as run_query."
+        )
+        assert props["parameters"]["description"] == (
+            "Named parameters for driver placeholders (e.g. %(name)s or {name:Type})."
+        )
+        assert props["database"]["description"] == (
+            "Session default database for unqualified names. Src: databases."
+        )
+        assert props["profile"]["description"] == (
+            "Profile name; uses default profile when omitted. Src: profiles."
+        )
+        assert props["types"]["description"] == (
+            "EXPLAIN variants: plan (indexes), pipeline, syntax. "
+            "Default plan and pipeline if omitted."
+        )
+
+    @pytest.mark.anyio
+    async def test_list_metadata_tools_schema_descriptions(self, client) -> None:
+        result = await client.list_tools()
+        db_tool = _tool_by_name(result, "list_databases")
+        assert db_tool.inputSchema["properties"]["profile"]["description"] == (
+            "Profile name; uses default profile when omitted. Src: profiles."
+        )
+        tables_tool = _tool_by_name(result, "list_tables")
+        tp = tables_tool.inputSchema["properties"]
+        assert tp["database"]["description"] == (
+            "Database to list; client default when omitted. Src: databases."
+        )
+        assert tp["profile"]["description"] == (
+            "Profile name; uses default profile when omitted. Src: profiles."
+        )
+        cols_tool = _tool_by_name(result, "list_columns")
+        cp = cols_tool.inputSchema["properties"]
+        assert cp["table"]["description"] == (
+            "Table or view name, or database.table. Src: tables."
+        )
+        assert cp["database"]["description"] == (
+            "Database when table is unqualified; ignored if table "
+            "contains a dot. Client default when omitted. Src: databases."
+        )
+        assert cp["profile"]["description"] == (
+            "Profile name; uses default profile when omitted. Src: profiles."
+        )
+        cluster_tool = _tool_by_name(result, "get_cluster_properties")
+        assert cluster_tool.inputSchema["properties"]["profile"]["description"] == (
+            "Profile name; uses default profile when omitted. Src: profiles."
         )
 
     @pytest.mark.anyio

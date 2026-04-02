@@ -3,7 +3,7 @@
 [![Build Status](https://github.com/alyiox/mcp-clickhouse/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alyiox/mcp-clickhouse/actions/workflows/ci.yml)
 [![PyPI Version](https://img.shields.io/pypi/v/mcp-clickhousex.svg)](https://pypi.org/project/mcp-clickhousex/)
 
-A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse that supports metadata discovery, resources, parameterized queries, and query analysis, with profile-based configuration and strict no-DML/DDL enforcement.
+A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse that supports metadata discovery, resources, parameterized `SELECT` queries, [`SHOW`](https://clickhouse.com/docs/sql-reference/statements/show) introspection, and query analysis, with profile-based configuration and strict no-DML/DDL enforcement.
 
 **Requirements:** Python 3.13+, a running ClickHouse instance, and connection details via environment variables.
 
@@ -96,36 +96,41 @@ Example `config.json`:
 
 Keep secrets in environment variables or a secret manager; avoid committing connection strings in the config file.
 
-Max rows is applied to every query (server-side via `max_result_rows`); results may be truncated with a `truncated` and `row_limit` field in the response.
+Max rows is applied to every `run_query` and `run_show` call (server-side via `max_result_rows`); results may be truncated with `truncated` and `row_limit` in the response.
 
 ## Tools
 
+Tool descriptions match `server.py` tool docstrings except the `[ClickHouse]` prefix is omitted here (it remains in MCP-exposed metadata). Parameter text matches each `Field(description=…)` on the same tool.
+
 | Tool | Description | Key params |
 |---|---|---|
-| **`list_profiles`** | List configured profiles (name and optional description). | — |
-| **`get_cluster_properties`** | Get cluster (node) version and execution limits for a profile. | `profile` (optional) |
-| **`run_query`** | Execute a read-only SELECT and return tabular results. Database/table must be specified in the SQL (e.g. `db.table`). Applies the profile's max rows limit. | `sql`, `parameters` (optional), `profile` (optional) |
-| **`analyze_query`** | Analyze a read-only SELECT via EXPLAIN (plan with index usage, pipeline, syntax). | `sql`, `parameters` (optional), `types` (optional), `database` (optional), `profile` (optional) |
-| **`list_databases`** | List all databases. | `profile` (optional) |
-| **`list_tables`** | List tables and views in a database. Returns `name`, `engine`, `primary_key`, `sorting_key`, `partition_key`, `total_rows`, `total_bytes` for query analysis. | `database` (optional), `profile` (optional) |
-| **`list_columns`** | List columns for a table or view. | `table`, `database` (optional), `profile` (optional) |
+| **`list_profiles`** | List configured profiles. Each entry includes name and optional description. | — |
+| **`get_cluster_properties`** | Get cluster properties and execution limits. Returns ClickHouse server version plus enforced limits (max rows, timeouts) for the profile. | **`profile`** — Profile name; uses default profile when omitted. Src: profiles. |
+| **`run_query`** | Execute read-only SELECT or WITH … SELECT. One statement; DML, DDL, SET, SYSTEM, and similar are rejected. Max-rows cap; overflow sets truncated and row_limit. Same SQL validation as analyze_query. | **`sql`** (required) — Read-only SELECT or WITH … SELECT. One statement; use qualified db.table or database. Driver placeholder syntax for parameters. **`parameters`** — Named parameters for driver placeholders (e.g. `%(name)s` or `{name:Type}`). **`database`** — Session default database for unqualified names. Src: databases. **`profile`** — Profile name; uses default profile when omitted. Src: profiles. |
+| **`run_show`** | Execute SHOW introspection statement. One statement per call; INTO OUTFILE rejected. Same max-rows cap and timeout behavior as run_query. | **`sql`** (required) — Single SHOW statement (e.g. SHOW DATABASES, SHOW CREATE TABLE). No INTO OUTFILE. **`parameters`** — Named parameters for driver placeholders (e.g. `%(name)s` or `{name:Type}`). **`database`** — Session default database for unqualified names. Src: databases. **`profile`** — Profile name; uses default profile when omitted. Src: profiles. |
+| **`analyze_query`** | Explain read-only SELECT or WITH … SELECT. Returns plan, pipeline, and/or syntax text. Default types plan and pipeline. Uses query timeout and optional database; no max-rows cap unlike run_query. | **`sql`** (required) — Read-only SELECT or WITH … SELECT for EXPLAIN. One statement; same validation as run_query. **`parameters`** — Named parameters for driver placeholders (e.g. `%(name)s` or `{name:Type}`). **`database`** — Session default database for unqualified names. Src: databases. **`profile`** — Profile name; uses default profile when omitted. Src: profiles. **`types`** — EXPLAIN variants: plan (indexes), pipeline, syntax. Default plan and pipeline if omitted. |
+| **`list_databases`** | List databases. Rows from system.databases visible to the connection. | **`profile`** — Profile name; uses default profile when omitted. Src: profiles. |
+| **`list_tables`** | List tables and views in a database. Rows from system.tables: name, engine, primary_key, sorting_key, partition_key, total_rows, total_bytes for query planning. | **`database`** — Database to list; client default when omitted. Src: databases. **`profile`** — Profile name; uses default profile when omitted. Src: profiles. |
+| **`list_columns`** | List columns for a table or view. Rows from system.columns for the resolved database and table. | **`table`** (required) — Table or view name, or database.table. Src: tables. **`database`** — Database when table is unqualified; ignored if table contains a dot. Client default when omitted. Src: databases. **`profile`** — Profile name; uses default profile when omitted. Src: profiles. |
 
 ## Resources
 
-The server exposes the same discovery and metadata as the tools above via URI-addressable resources (profile-first hierarchy). All resource content is JSON (`application/json`). Use path segment `default` for the default profile or database.
+The server exposes the same discovery and metadata as the tools above via URI-addressable resources (profile-first hierarchy). Each resource’s `description` matches the corresponding tool (`list_profiles`, `get_cluster_properties`, `list_databases`, `list_tables`, `list_columns`), plus `Src:` tags for URI path parameters. All resource content is JSON (`application/json`). Use path segment `default` for the default profile or database.
+
+Resource descriptions match `description=…` on `@mcp.resource` in `server.py` (same prefix omission as above).
 
 | Resource | URI | Description |
 |----------|-----|-------------|
-| Profiles | `clickhouse://profiles` | List configured profiles (same as `list_profiles`) |
-| Cluster properties | `clickhouse://profiles/{profile}/cluster-properties` | Cluster version and limits for a profile |
-| Databases | `clickhouse://profiles/{profile}/databases` | List databases for a profile |
-| Tables | `clickhouse://profiles/{profile}/databases/{database}/tables` | List tables for a profile and database |
-| Table columns | `clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns` | List columns for a table |
+| Profiles | `clickhouse://profiles` | List configured profiles. Each entry includes name and optional description. |
+| Cluster properties | `clickhouse://profiles/{profile}/cluster-properties` | Get cluster properties and execution limits. Returns ClickHouse server version plus enforced limits (max rows, timeouts) for the profile. Src: profiles. |
+| Databases | `clickhouse://profiles/{profile}/databases` | List databases. Rows from system.databases visible to the connection. Src: profiles. |
+| Tables | `clickhouse://profiles/{profile}/databases/{database}/tables` | List tables and views in a database. Rows from system.tables: name, engine, primary_key, sorting_key, partition_key, total_rows, total_bytes for query planning. Src: profiles, dbs. |
+| Table columns | `clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns` | List columns for a table or view. Rows from system.columns for the resolved database and table. Src: profiles, dbs, tables. |
 
 
 ## Security
 
-Read-only (`SELECT` only); parameterized queries supported (`%(name)s` or `{name:Type}` syntax). Use environment variables for connection credentials — never commit secrets.
+Read-only SQL only: `run_query` allows `SELECT` / `WITH … SELECT`; `run_show` allows a single `SHOW` statement per call. `INTO OUTFILE` is not allowed on `run_show`. Parameterized queries are supported where the driver allows (`%(name)s` or `{name:Type}` syntax). Use environment variables for connection credentials — never commit secrets.
 
 ## MCP host examples
 
