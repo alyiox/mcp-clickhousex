@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -28,15 +27,6 @@ _ALL_FLAT_KEYS = [
     "MCP_CLICKHOUSE_QUERY_MAX_ROWS",
     "MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS",
 ]
-
-
-@pytest.fixture(autouse=True)
-def _no_user_config_file():
-    """Use a nonexistent user config path so env-only tests are deterministic."""
-    nonexistent = Path(tempfile.gettempdir()) / "mcp_clickhousex_test_nonexistent"
-    with patch("mcp_clickhousex.config._user_config_path") as p:
-        p.return_value = nonexistent / "mcp-clickhousex" / "config.json"
-        yield
 
 
 def _profile_dicts(profiles):
