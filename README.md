@@ -181,6 +181,22 @@ MCP_CLICKHOUSE_DSN = "http://default:@localhost:8123/default"
 }
 ```
 
+### Claude Code
+
+```json
+{
+  "mcpServers": {
+    "clickhouse": {
+      "command": "uvx",
+      "args": ["mcp-clickhousex"],
+      "env": {
+        "MCP_CLICKHOUSE_DSN": "http://default:@localhost:8123/default"
+      }
+    }
+  }
+}
+```
+
 ### GitHub Copilot (agent)
 
 ```json
