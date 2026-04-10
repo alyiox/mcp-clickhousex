@@ -38,6 +38,18 @@ export MCP_CLICKHOUSE_QUERY_MAX_ROWS="5000"                          # default: 
 export MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS="30"             # default: 30 (capped at 300)
 ```
 
+**Special characters in credentials:** If the username or password contains URL-reserved characters, percent-encode them in the DSN:
+
+| Character | Encoding |
+|-----------|----------|
+| `#` | `%23` |
+| `?` | `%3F` |
+| `/` | `%2F` |
+| `@` | `%40` |
+| `%` | `%25` |
+
+For example, username `admin@org` and password `p#ss?` become `admin%40org:p%23ss%3F` in the DSN: `http://admin%40org:p%23ss%3F@host:8123/database`.
+
 ### Multiple profiles (structured env vars)
 
 To connect to more than one ClickHouse instance, use the `MCP_CLICKHOUSE_PROFILES_<NAME>_` prefix. Profile names must be alphanumeric (no underscores) and are case-insensitive.

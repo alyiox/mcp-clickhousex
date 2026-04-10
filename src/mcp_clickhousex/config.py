@@ -30,6 +30,8 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 
 import clickhouse_connect
 from clickhouse_connect.driver.client import Client
@@ -263,6 +265,32 @@ def get_profiles() -> list[Profile]:
     ]
 
 
+def _parse_dsn(dsn: str) -> dict[str, Any]:
+    """Decompose a DSN URL into ``clickhouse_connect.get_client`` kwargs.
+
+    Applies :func:`~urllib.parse.unquote` to the username and password so
+    that percent-encoded special characters (``#`` → ``%23``, etc.) are
+    decoded before being passed to the driver.
+    """
+    parsed = urlparse(dsn)
+    kwargs: dict[str, Any] = {}
+    if parsed.hostname:
+        kwargs["host"] = parsed.hostname
+    if parsed.port:
+        kwargs["port"] = parsed.port
+    if parsed.username is not None:
+        kwargs["username"] = unquote(parsed.username)
+    if parsed.password is not None:
+        kwargs["password"] = unquote(parsed.password)
+    if parsed.path and parsed.path != "/":
+        kwargs["database"] = parsed.path.lstrip("/").split("/")[0]
+    if parsed.scheme in ("https", "clickhouses"):
+        kwargs["secure"] = True
+    for k, v in parse_qs(parsed.query).items():
+        kwargs[k] = v[0]
+    return kwargs
+
+
 def get_client(profile: str | None = None) -> Client:
     """Build a ClickHouse client for the given profile.
 
@@ -270,7 +298,7 @@ def get_client(profile: str | None = None) -> Client:
     """
     _, data = _lookup(profile)
     dsn = data.dsn or _DEFAULT_DSN
-    return clickhouse_connect.get_client(dsn=dsn)
+    return clickhouse_connect.get_client(**_parse_dsn(dsn))
 
 
 def get_limits(profile: str | None = None) -> ExecutionLimits:

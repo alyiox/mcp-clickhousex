@@ -6,7 +6,7 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -404,3 +404,63 @@ class TestUserConfigFile:
                 names = [p["name"] for p in profiles]
                 assert "my_profile" not in names
                 assert "valid" in names
+
+
+# -- Special-character passwords -----------------------------------------------
+
+
+class TestSpecialCharCredentials:
+    """Verify that percent-encoded special chars in DSN credentials are decoded."""
+
+    def _get_client_kwargs(self, dsn: str) -> dict:
+        with _env({"MCP_CLICKHOUSE_DSN": dsn}):
+            with patch("mcp_clickhousex.config.clickhouse_connect") as mock_cc:
+                mock_cc.get_client.return_value = MagicMock()
+                get_client()
+                return mock_cc.get_client.call_args[1]
+
+    def test_hash_in_password(self) -> None:
+        kwargs = self._get_client_kwargs("http://user:p%23ss@host:8123/db")
+        assert kwargs["password"] == "p#ss"
+
+    def test_question_mark_in_password(self) -> None:
+        kwargs = self._get_client_kwargs("http://user:p%3Fss@host:8123/db")
+        assert kwargs["password"] == "p?ss"
+
+    def test_slash_in_password(self) -> None:
+        kwargs = self._get_client_kwargs("http://user:p%2Fss@host:8123/db")
+        assert kwargs["password"] == "p/ss"
+
+    def test_at_in_password(self) -> None:
+        kwargs = self._get_client_kwargs("http://user:p%40ss@host:8123/db")
+        assert kwargs["password"] == "p@ss"
+
+    def test_multiple_special_chars_in_password(self) -> None:
+        kwargs = self._get_client_kwargs("http://user:p%23a%3Fs%2Fs%40%21@host:8123/db")
+        assert kwargs["password"] == "p#a?s/s@!"
+
+    def test_special_chars_in_username(self) -> None:
+        kwargs = self._get_client_kwargs("http://admin%40org:pass@host:8123/db")
+        assert kwargs["username"] == "admin@org"
+
+    def test_special_chars_in_both(self) -> None:
+        kwargs = self._get_client_kwargs("http://user%23name:p%3Fss@host:8123/db")
+        assert kwargs["username"] == "user#name"
+        assert kwargs["password"] == "p?ss"
+
+    def test_plain_credentials_unchanged(self) -> None:
+        kwargs = self._get_client_kwargs("http://user:plain123@host:8123/db")
+        assert kwargs["username"] == "user"
+        assert kwargs["password"] == "plain123"
+
+    def test_dsn_fields_decomposed(self) -> None:
+        kwargs = self._get_client_kwargs("http://admin:secret@myhost:9000/mydb")
+        assert kwargs["host"] == "myhost"
+        assert kwargs["port"] == 9000
+        assert kwargs["username"] == "admin"
+        assert kwargs["password"] == "secret"
+        assert kwargs["database"] == "mydb"
+
+    def test_https_sets_secure(self) -> None:
+        kwargs = self._get_client_kwargs("https://user:pass@host:8443/db")
+        assert kwargs.get("secure") is True
