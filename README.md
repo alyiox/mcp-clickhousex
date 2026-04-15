@@ -108,14 +108,14 @@ The server exposes the same discovery and metadata as the tools above via URI-ad
 
 Resource descriptions match `description=…` on `@mcp.resource` in `server.py` (same prefix omission as above).
 
-| Resource | URI | Description |
-|----------|-----|-------------|
-| Profiles | `clickhouse://profiles` | List configured profiles. Each entry includes name and optional description. |
-| Cluster properties | `clickhouse://profiles/{profile}/cluster-properties` | Get cluster properties and execution limits. Returns ClickHouse server version plus enforced limits (max rows, timeouts) for the profile. Src: profiles. |
-| Databases | `clickhouse://profiles/{profile}/databases` | List databases. Rows from system.databases visible to the connection. Src: profiles. |
-| Tables | `clickhouse://profiles/{profile}/databases/{database}/tables` | List tables and views in a database. Rows from system.tables: name, engine, primary_key, sorting_key, partition_key, total_rows, total_bytes for query planning. Src: profiles, dbs. |
-| Table columns | `clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns` | List columns for a table or view. Rows from system.columns for the resolved database and table. Src: profiles, dbs, tables. |
-| Snapshot | `clickhouse://snapshots/{id}` | Fetch a query result snapshot by ID. Returns the full result as a CSV string (header row + data rows). Entries expire after 7 days. Src: run_query with snapshot=true. |
+| URI | Description |
+|-----|-------------|
+| `clickhouse://profiles` | List configured profiles. Each entry includes name and optional description. |
+| `clickhouse://profiles/{profile}/cluster-properties` | Get cluster properties and execution limits. Returns ClickHouse server version plus enforced limits (max rows, timeouts) for the profile. Src: profiles. |
+| `clickhouse://profiles/{profile}/databases` | List databases. Rows from system.databases visible to the connection. Src: profiles. |
+| `clickhouse://profiles/{profile}/databases/{database}/tables` | List tables and views in a database. Rows from system.tables: name, engine, primary_key, sorting_key, partition_key, total_rows, total_bytes for query planning. Src: profiles, dbs. |
+| `clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns` | List columns for a table or view. Rows from system.columns for the resolved database and table. Src: profiles, dbs, tables. |
+| `clickhouse://snapshots/{id}` | Fetch a query result snapshot by ID. Returns the full result as a CSV string (header row + data rows). Entries expire after 7 days. Src: run_query with snapshot=true. |
 
 
 ## Security
