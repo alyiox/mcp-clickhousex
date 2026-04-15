@@ -253,7 +253,7 @@ class TestRunQueryE2E:
         assert not result.isError
         data = _parse_text(result)
         assert "snapshot_uri" in data
-        assert data["snapshot_uri"].startswith("clickhouse://snapshots/")
+        assert data["snapshot_uri"].startswith("chx://snapshots/")
         assert data["row_count"] == 3
 
     @pytest.mark.anyio
@@ -465,7 +465,7 @@ class TestResourcesE2E:
     async def test_list_resources_includes_clickhouse_uris(self, client) -> None:
         result = await client.list_resources()
         uris = [str(r.uri) for r in result.resources]
-        assert "clickhouse://profiles" in uris
+        assert "chx://profiles" in uris
 
     @pytest.mark.anyio
     async def test_list_resource_templates_includes_profile_first_uris(
@@ -473,17 +473,19 @@ class TestResourcesE2E:
     ) -> None:
         result = await client.list_resource_templates()
         uri_templates = [t.uriTemplate for t in result.resourceTemplates]
-        assert "clickhouse://profiles/{profile}/cluster-properties" in uri_templates
-        assert "clickhouse://profiles/{profile}/databases" in uri_templates
-        tables_tpl = "clickhouse://profiles/{profile}/databases/{database}/tables"
+        assert "chx://profiles/{profile}/cluster-properties" in uri_templates
+        assert "chx://profiles/{profile}/databases" in uri_templates
+        tables_tpl = "chx://profiles/{profile}/databases/{database}/tables"
         assert tables_tpl in uri_templates
-        cols_tpl = "clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns"
+        cols_tpl = (
+            "chx://profiles/{profile}/databases/{database}/tables/{table}/columns"
+        )
         assert cols_tpl in uri_templates
-        assert "clickhouse://snapshots/{id}" in uri_templates
+        assert "chx://snapshots/{id}" in uri_templates
 
     @pytest.mark.anyio
     async def test_read_resource_profiles(self, client) -> None:
-        result = await client.read_resource("clickhouse://profiles")
+        result = await client.read_resource("chx://profiles")
         assert result.contents
         content = result.contents[0]
         assert hasattr(content, "text")
@@ -494,9 +496,7 @@ class TestResourcesE2E:
 
     @pytest.mark.anyio
     async def test_read_resource_cluster_properties(self, client) -> None:
-        result = await client.read_resource(
-            "clickhouse://profiles/default/cluster-properties"
-        )
+        result = await client.read_resource("chx://profiles/default/cluster-properties")
         assert result.contents
         content = result.contents[0]
         assert hasattr(content, "text")
@@ -507,7 +507,7 @@ class TestResourcesE2E:
 
     @pytest.mark.anyio
     async def test_read_resource_databases(self, client) -> None:
-        result = await client.read_resource("clickhouse://profiles/default/databases")
+        result = await client.read_resource("chx://profiles/default/databases")
         assert result.contents
         content = result.contents[0]
         assert hasattr(content, "text")
@@ -522,7 +522,7 @@ class TestResourcesE2E:
     @pytest.mark.anyio
     async def test_read_resource_tables(self, client) -> None:
         result = await client.read_resource(
-            "clickhouse://profiles/default/databases/default/tables"
+            "chx://profiles/default/databases/default/tables"
         )
         assert result.contents
         content = result.contents[0]
@@ -537,7 +537,7 @@ class TestResourcesE2E:
     @pytest.mark.anyio
     async def test_read_resource_table_columns(self, client) -> None:
         result = await client.read_resource(
-            "clickhouse://profiles/default/databases/default/tables/test_table/columns"
+            "chx://profiles/default/databases/default/tables/test_table/columns"
         )
         assert result.contents
         content = result.contents[0]

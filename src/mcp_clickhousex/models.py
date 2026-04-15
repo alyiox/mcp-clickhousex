@@ -103,7 +103,7 @@ class SnapshotResult(MCPBase):
     snapshot_uri: str = Field(
         description=(
             "MCP resource URI for the snapshot CSV "
-            "(e.g. ``clickhouse://snapshots/{id}``). "
+            "(e.g. ``chx://snapshots/{id}``). "
             "Fetch it via the snapshot resource. Entries expire after 7 days."
         )
     )

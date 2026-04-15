@@ -104,7 +104,7 @@ def run_query(
         Field(
             description=(
                 "When true, persist the full result as a CSV file and return a "
-                "resource URI (clickhouse://snapshots/{id}) instead of inline data. "
+                "resource URI (chx://snapshots/{id}) instead of inline data. "
                 "Use for queries that may exceed the interactive row limit (1 000). "
                 "Snapshot limits apply (default 10 000 rows, hard ceiling 50 000). "
                 "Entries expire after 7 days."
@@ -318,7 +318,7 @@ def list_columns(
 
 
 @mcp.resource(
-    "clickhouse://profiles",
+    "chx://profiles",
     name="profiles",
     description=(
         "[ClickHouse] List configured profiles. "
@@ -335,7 +335,7 @@ def resource_profiles() -> list[Profile]:
 
 
 @mcp.resource(
-    "clickhouse://profiles/{profile}/cluster-properties",
+    "chx://profiles/{profile}/cluster-properties",
     name="cluster-properties",
     description=(
         "[ClickHouse] Get cluster properties and execution limits. "
@@ -354,7 +354,7 @@ def resource_cluster_properties_for_profile(profile: str) -> ClusterProperties:
 
 
 @mcp.resource(
-    "clickhouse://profiles/{profile}/databases",
+    "chx://profiles/{profile}/databases",
     name="databases",
     description=(
         "[ClickHouse] List databases. "
@@ -371,7 +371,7 @@ def resource_databases_for_profile(profile: str) -> TabularResult:
 
 
 @mcp.resource(
-    "clickhouse://profiles/{profile}/databases/{database}/tables",
+    "chx://profiles/{profile}/databases/{database}/tables",
     name="tables",
     description=(
         "[ClickHouse] List tables and views in a database. "
@@ -392,7 +392,7 @@ def resource_tables_for_profile_database(profile: str, database: str) -> Tabular
 
 
 @mcp.resource(
-    "clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns",
+    "chx://profiles/{profile}/databases/{database}/tables/{table}/columns",
     name="table-columns",
     description=(
         "[ClickHouse] List columns for a table or view. "
@@ -413,7 +413,7 @@ def resource_columns_for_profile_database_table(
 
 
 @mcp.resource(
-    "clickhouse://snapshots/{id}",
+    "chx://snapshots/{id}",
     name="snapshot",
     description=(
         "[ClickHouse] Fetch a query result snapshot by ID. "

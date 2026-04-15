@@ -93,7 +93,7 @@ def run_query(
     if snapshot:
         snapshot_id = snapshots.save(columns, rows)
         return SnapshotResult(
-            snapshot_uri=f"clickhouse://snapshots/{snapshot_id}",
+            snapshot_uri=f"chx://snapshots/{snapshot_id}",
             row_count=len(rows),
             truncated=True if truncated else None,
             row_limit=max_rows if truncated else None,

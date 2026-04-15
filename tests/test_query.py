@@ -130,7 +130,7 @@ class TestRunQuery:
         """snapshot=True returns a snapshot_uri instead of inline data."""
         result = _result_dict(run_query("SELECT 1 AS n", snapshot=True))
         assert "snapshot_uri" in result
-        assert result["snapshot_uri"].startswith("clickhouse://snapshots/")
+        assert result["snapshot_uri"].startswith("chx://snapshots/")
         assert result["row_count"] == 1
         assert "data" not in result
 
@@ -142,7 +142,7 @@ class TestRunQuery:
             run_query("SELECT id, name FROM test_table ORDER BY id", snapshot=True)
         )
         uri = result["snapshot_uri"]
-        snapshot_id = uri.removeprefix("clickhouse://snapshots/")
+        snapshot_id = uri.removeprefix("chx://snapshots/")
         csv_data = snapshots.fetch(snapshot_id)
         assert csv_data is not None
         headers, rows = _parse_csv(csv_data)
