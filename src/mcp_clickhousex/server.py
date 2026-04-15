@@ -9,7 +9,7 @@ from typing import Annotated, Any, Literal
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from mcp_clickhousex import metadata, query
+from mcp_clickhousex import metadata, query, snapshots
 from mcp_clickhousex.cluster_properties import (
     get_cluster_properties as get_cluster_properties_impl,
 )
@@ -19,6 +19,8 @@ from mcp_clickhousex.models import (
     ExplainResult,
     Profile,
     QueryResult,
+    ShowResult,
+    SnapshotResult,
     TabularResult,
 )
 
@@ -97,15 +99,36 @@ def run_query(
             ),
         ),
     ] = None,
-) -> QueryResult:
+    snapshot: Annotated[
+        bool,
+        Field(
+            description=(
+                "When true, persist the full result as a CSV file and return a "
+                "resource URI (clickhouse://snapshots/{id}) instead of inline data. "
+                "Use for queries that may exceed the interactive row limit (1 000). "
+                "Snapshot limits apply (default 10 000 rows, hard ceiling 50 000). "
+                "Entries expire after 7 days."
+            ),
+        ),
+    ] = False,
+) -> QueryResult | SnapshotResult:
     """[ClickHouse] Execute read-only SELECT or WITH … SELECT.
 
     One statement; DML, DDL, SET, SYSTEM, and similar are rejected.
     Max-rows cap; overflow sets truncated and row_limit. Same SQL
     validation as analyze_query.
+
+    Returns ``{data, row_count}`` where ``data`` is an RFC 4180 CSV string.
+    Pass ``snapshot=true`` to persist the result to disk and receive a
+    ``{snapshot_uri, row_count}`` instead; fetch the CSV via the snapshot
+    resource URI.
     """
     return query.run_query(
-        sql, parameters=parameters, database=database, profile=profile
+        sql,
+        parameters=parameters,
+        database=database,
+        profile=profile,
+        snapshot=snapshot,
     )
 
 
@@ -145,11 +168,11 @@ def run_show(
             ),
         ),
     ] = None,
-) -> QueryResult:
+) -> ShowResult:
     """[ClickHouse] Execute SHOW introspection statement.
 
-    One statement per call; INTO OUTFILE rejected. Same max-rows cap and
-    timeout behavior as run_query.
+    One statement per call; INTO OUTFILE rejected. Interactive row limits
+    apply (default 500, hard ceiling 1 000). Same timeout as run_query.
     """
     return query.run_show(
         sql, parameters=parameters, database=database, profile=profile
@@ -387,3 +410,25 @@ def resource_columns_for_profile_database_table(
     Src: profiles, dbs, tables.
     """
     return metadata.list_columns(table, database, profile=profile)
+
+
+@mcp.resource(
+    "clickhouse://snapshots/{id}",
+    name="snapshot",
+    description=(
+        "[ClickHouse] Fetch a query result snapshot by ID. "
+        "Returns the full result as a CSV string (header row + data rows). "
+        "Entries expire after 7 days. Src: run_query with snapshot=true."
+    ),
+    mime_type="text/csv",
+)
+def resource_snapshot(id: str) -> str:
+    """[ClickHouse] Fetch a query result snapshot by ID.
+
+    Returns the full result as a CSV string. Entries expire after 7 days.
+    Src: run_query with snapshot=true.
+    """
+    csv_data = snapshots.fetch(id)
+    if csv_data is None:
+        raise ValueError(f"Snapshot '{id}' not found or has expired (TTL: 7 days).")
+    return csv_data

@@ -1,5 +1,9 @@
 """Functional tests for mcp_clickhousex.query (run_query & analyze_query)."""
 
+from __future__ import annotations
+
+import csv
+import io
 import os
 
 import pytest
@@ -12,18 +16,30 @@ def _result_dict(result):
     return result.model_dump(exclude_none=True)
 
 
+def _parse_csv(data: str) -> tuple[list[str], list[list[str]]]:
+    """Return (headers, rows) from a CSV string."""
+    reader = csv.reader(io.StringIO(data))
+    rows = list(reader)
+    return rows[0], rows[1:]
+
+
 class TestRunQuery:
     def test_simple_select(self) -> None:
         result = _result_dict(run_query("SELECT 1 AS n"))
-        assert result["columns"] == ["n"]
-        assert result["rows"] == [[1]]
+        assert "data" in result
+        assert result["row_count"] == 1
+        headers, rows = _parse_csv(result["data"])
+        assert headers == ["n"]
+        assert rows == [["1"]]
 
     def test_qualified_table(self) -> None:
         result = _result_dict(run_query("SELECT id, name FROM test_table ORDER BY id"))
-        assert result["columns"] == ["id", "name"]
-        assert len(result["rows"]) == 3
-        assert result["rows"][0] == [1, "alice"]
-        assert result["rows"][2] == [3, "charlie"]
+        headers, rows = _parse_csv(result["data"])
+        assert headers == ["id", "name"]
+        assert len(rows) == 3
+        assert rows[0] == ["1", "alice"]
+        assert rows[2] == ["3", "charlie"]
+        assert result["row_count"] == 3
 
     def test_with_parameters(self) -> None:
         result = _result_dict(
@@ -32,7 +48,8 @@ class TestRunQuery:
                 parameters={"target_id": 2},
             )
         )
-        assert result["rows"] == [["bob"]]
+        _, rows = _parse_csv(result["data"])
+        assert rows == [["bob"]]
 
     def test_cte(self) -> None:
         result = _result_dict(
@@ -41,7 +58,8 @@ class TestRunQuery:
                 "SELECT n FROM nums ORDER BY n"
             )
         )
-        assert result["rows"] == [[0], [1], [2]]
+        _, rows = _parse_csv(result["data"])
+        assert rows == [["0"], ["1"], ["2"]]
 
     def test_database_override(self) -> None:
         """run_query with database= uses that database as default."""
@@ -51,8 +69,9 @@ class TestRunQuery:
                 database="system",
             )
         )
-        assert result["columns"] == ["db"]
-        assert result["rows"] == [["system"]]
+        headers, rows = _parse_csv(result["data"])
+        assert headers == ["db"]
+        assert rows == [["system"]]
 
     def test_rejects_insert(self) -> None:
         with pytest.raises(ValueError, match="read-only"):
@@ -79,13 +98,86 @@ class TestRunQuery:
             result = _result_dict(
                 run_query("SELECT number AS n FROM system.numbers LIMIT 5")
             )
-            assert result["columns"] == ["n"]
-            assert len(result["rows"]) <= 2
+            _, rows = _parse_csv(result["data"])
+            assert len(rows) <= 2
+            assert result["row_count"] <= 2
         finally:
             if old is None:
                 os.environ.pop("MCP_CLICKHOUSE_QUERY_MAX_ROWS", None)
             else:
                 os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = old
+            reset_registry()
+
+    def test_truncated_flag(self) -> None:
+        """Truncated result sets the truncated and row_limit fields."""
+        old = os.environ.get("MCP_CLICKHOUSE_QUERY_MAX_ROWS")
+        try:
+            os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = "2"
+            reset_registry()
+            result = _result_dict(
+                run_query("SELECT number AS n FROM system.numbers LIMIT 5")
+            )
+            assert result.get("truncated") is True
+            assert result.get("row_limit") == 2
+        finally:
+            if old is None:
+                os.environ.pop("MCP_CLICKHOUSE_QUERY_MAX_ROWS", None)
+            else:
+                os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = old
+            reset_registry()
+
+    def test_snapshot_returns_uri(self) -> None:
+        """snapshot=True returns a snapshot_uri instead of inline data."""
+        result = _result_dict(run_query("SELECT 1 AS n", snapshot=True))
+        assert "snapshot_uri" in result
+        assert result["snapshot_uri"].startswith("clickhouse://snapshots/")
+        assert result["row_count"] == 1
+        assert "data" not in result
+
+    def test_snapshot_uri_fetchable(self) -> None:
+        """The snapshot URI points to a file with valid CSV content."""
+        from mcp_clickhousex import snapshots
+
+        result = _result_dict(
+            run_query("SELECT id, name FROM test_table ORDER BY id", snapshot=True)
+        )
+        uri = result["snapshot_uri"]
+        snapshot_id = uri.removeprefix("clickhouse://snapshots/")
+        csv_data = snapshots.fetch(snapshot_id)
+        assert csv_data is not None
+        headers, rows = _parse_csv(csv_data)
+        assert headers == ["id", "name"]
+        assert len(rows) == 3
+        assert rows[0] == ["1", "alice"]
+
+    def test_snapshot_uses_larger_limit(self) -> None:
+        """Snapshot mode allows more rows than interactive mode."""
+        old_q = os.environ.get("MCP_CLICKHOUSE_QUERY_MAX_ROWS")
+        old_s = os.environ.get("MCP_CLICKHOUSE_SNAPSHOT_MAX_ROWS")
+        try:
+            os.environ["MCP_CLICKHOUSE_QUERY_MAX_ROWS"] = "2"
+            os.environ["MCP_CLICKHOUSE_SNAPSHOT_MAX_ROWS"] = "10"
+            reset_registry()
+            interactive = _result_dict(
+                run_query("SELECT number AS n FROM system.numbers LIMIT 8")
+            )
+            snap = _result_dict(
+                run_query(
+                    "SELECT number AS n FROM system.numbers LIMIT 8",
+                    snapshot=True,
+                )
+            )
+            assert interactive["row_count"] == 2
+            assert snap["row_count"] == 8
+        finally:
+            for key, old in [
+                ("MCP_CLICKHOUSE_QUERY_MAX_ROWS", old_q),
+                ("MCP_CLICKHOUSE_SNAPSHOT_MAX_ROWS", old_s),
+            ]:
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
             reset_registry()
 
 

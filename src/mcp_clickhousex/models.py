@@ -48,6 +48,7 @@ class ExecutionLimits(MCPBase):
     """Server-enforced execution policies."""
 
     query: QueryLimits
+    snapshot: QueryLimits
 
 
 class ClusterProperties(MCPBase):
@@ -70,8 +71,63 @@ class TabularResult(MCPBase):
     )
 
 
-class QueryResult(TabularResult):
-    """Result of an interactive read-only SQL query."""
+class QueryResult(MCPBase):
+    """Result of an interactive read-only SQL query (CSV format)."""
+
+    data: str = Field(
+        description=(
+            "RFC 4180 CSV string: first row is the header, remaining rows are data."
+        )
+    )
+    row_count: int = Field(description="Number of data rows in the result.")
+    truncated: bool | None = Field(
+        default=None,
+        description=(
+            "Whether the result set was truncated due to the enforced row limit."
+        ),
+    )
+    row_limit: int | None = Field(
+        default=None,
+        description="The enforced maximum number of rows returned for this query.",
+    )
+
+    @model_serializer(mode="wrap")
+    def _serialize_without_nulls(self, handler):  # type: ignore[no-untyped-def]
+        d = handler(self)
+        return {key: value for key, value in d.items() if value is not None}
+
+
+class SnapshotResult(MCPBase):
+    """Result of a snapshot query: CSV persisted to disk, accessible via URI."""
+
+    snapshot_uri: str = Field(
+        description=(
+            "MCP resource URI for the snapshot CSV "
+            "(e.g. ``clickhouse://snapshots/{id}``). "
+            "Fetch it via the snapshot resource. Entries expire after 7 days."
+        )
+    )
+    row_count: int = Field(description="Number of data rows in the snapshot.")
+    truncated: bool | None = Field(
+        default=None,
+        description=(
+            "Whether the result set was truncated due to the enforced snapshot row "
+            "limit."
+        ),
+    )
+    row_limit: int | None = Field(
+        default=None,
+        description="The enforced maximum number of rows for the snapshot query.",
+    )
+
+    @model_serializer(mode="wrap")
+    def _serialize_without_nulls(self, handler):  # type: ignore[no-untyped-def]
+        d = handler(self)
+        return {key: value for key, value in d.items() if value is not None}
+
+
+class ShowResult(TabularResult):
+    """Result of a SHOW introspection statement (columns + rows + optional truncation)."""  # noqa: E501
 
     truncated: bool | None = Field(
         default=None,
@@ -86,8 +142,8 @@ class QueryResult(TabularResult):
 
     @model_serializer(mode="wrap")
     def _serialize_without_nulls(self, handler):  # type: ignore[no-untyped-def]
-        data = handler(self)
-        return {key: value for key, value in data.items() if value is not None}
+        d = handler(self)
+        return {key: value for key, value in d.items() if value is not None}
 
 
 class ExplainResult(MCPBase):

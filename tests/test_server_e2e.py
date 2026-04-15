@@ -1,6 +1,8 @@
 """End-to-end tests: exercise the MCP tools through in-memory transport."""
 
+import csv
 import inspect
+import io
 import json
 
 import pytest
@@ -28,6 +30,13 @@ async def client():
 def _parse_text(result) -> dict:
     """Extract the JSON payload from the first TextContent block."""
     return json.loads(result.content[0].text)
+
+
+def _parse_query_csv(data: dict) -> tuple[list[str], list[list[str]]]:
+    """Parse the CSV string from a run_query result dict."""
+    reader = csv.reader(io.StringIO(data["data"]))
+    rows = list(reader)
+    return rows[0], rows[1:]
 
 
 def _tool_by_name(tools_result, name: str):
@@ -167,12 +176,16 @@ class TestToolSchemasE2E:
     async def test_output_schemas_match_typed_models(self, client) -> None:
         result = await client.list_tools()
 
+        # run_query returns QueryResult | SnapshotResult (anyOf union via $defs)
         run_query_tool = _tool_by_name(result, "run_query")
-        output_props = run_query_tool.outputSchema["properties"]
-        assert output_props["columns"]["type"] == "array"
-        assert output_props["rows"]["type"] == "array"
-        assert output_props["truncated"]["anyOf"][0]["type"] == "boolean"
-        assert output_props["row_limit"]["anyOf"][0]["type"] == "integer"
+        schema = run_query_tool.outputSchema
+        defs = schema.get("$defs", {})
+        assert "QueryResult" in defs
+        assert "SnapshotResult" in defs
+        assert "data" in defs["QueryResult"]["properties"]
+        assert "row_count" in defs["QueryResult"]["properties"]
+        assert "snapshot_uri" in defs["SnapshotResult"]["properties"]
+        assert "row_count" in defs["SnapshotResult"]["properties"]
 
         run_show_tool = _tool_by_name(result, "run_show")
         show_props = run_show_tool.outputSchema["properties"]
@@ -197,8 +210,11 @@ class TestRunQueryE2E:
         result = await client.call_tool("run_query", {"sql": "SELECT 1 AS n"})
         assert not result.isError
         data = _parse_text(result)
-        assert data["columns"] == ["n"]
-        assert data["rows"] == [[1]]
+        assert "data" in data
+        assert data["row_count"] == 1
+        headers, rows = _parse_query_csv(data)
+        assert headers == ["n"]
+        assert rows == [["1"]]
 
     @pytest.mark.anyio
     async def test_table_query(self, client) -> None:
@@ -208,9 +224,11 @@ class TestRunQueryE2E:
         )
         assert not result.isError
         data = _parse_text(result)
-        assert data["columns"] == ["id", "name"]
-        assert len(data["rows"]) == 3
-        assert data["rows"][0] == [1, "alice"]
+        assert data["row_count"] == 3
+        headers, rows = _parse_query_csv(data)
+        assert headers == ["id", "name"]
+        assert len(rows) == 3
+        assert rows[0] == ["1", "alice"]
 
     @pytest.mark.anyio
     async def test_with_parameters(self, client) -> None:
@@ -223,7 +241,20 @@ class TestRunQueryE2E:
         )
         assert not result.isError
         data = _parse_text(result)
-        assert data["rows"] == [["bob"]]
+        _, rows = _parse_query_csv(data)
+        assert rows == [["bob"]]
+
+    @pytest.mark.anyio
+    async def test_snapshot_mode(self, client) -> None:
+        result = await client.call_tool(
+            "run_query",
+            {"sql": "SELECT id, name FROM test_table ORDER BY id", "snapshot": True},
+        )
+        assert not result.isError
+        data = _parse_text(result)
+        assert "snapshot_uri" in data
+        assert data["snapshot_uri"].startswith("clickhouse://snapshots/")
+        assert data["row_count"] == 3
 
     @pytest.mark.anyio
     async def test_rejects_insert(self, client) -> None:
@@ -448,6 +479,7 @@ class TestResourcesE2E:
         assert tables_tpl in uri_templates
         cols_tpl = "clickhouse://profiles/{profile}/databases/{database}/tables/{table}/columns"
         assert cols_tpl in uri_templates
+        assert "clickhouse://snapshots/{id}" in uri_templates
 
     @pytest.mark.anyio
     async def test_read_resource_profiles(self, client) -> None:
@@ -517,3 +549,22 @@ class TestResourcesE2E:
         names = [row[data["columns"].index("name")] for row in data["rows"]]
         assert "id" in names
         assert "name" in names
+
+    @pytest.mark.anyio
+    async def test_read_snapshot_resource(self, client) -> None:
+        # Create a snapshot via run_query, then fetch it via the resource URI
+        tool_result = await client.call_tool(
+            "run_query",
+            {"sql": "SELECT id, name FROM test_table ORDER BY id", "snapshot": True},
+        )
+        assert not tool_result.isError
+        snap_data = _parse_text(tool_result)
+        uri = snap_data["snapshot_uri"]
+
+        resource_result = await client.read_resource(uri)
+        assert resource_result.contents
+        csv_text = resource_result.contents[0].text
+        reader = csv.reader(io.StringIO(csv_text))
+        rows = list(reader)
+        assert rows[0] == ["id", "name"]
+        assert len(rows) == 4  # 1 header + 3 data rows

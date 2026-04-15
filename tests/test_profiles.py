@@ -4,7 +4,7 @@ import os
 
 from mcp_clickhousex.config import (
     DEFAULT_PROFILE_NAME,
-    HARD_ROW_LIMIT,
+    INTERACTIVE_HARD_ROW_LIMIT,
     get_limits,
     get_max_rows,
     get_profiles,
@@ -53,8 +53,8 @@ class TestGetLimits:
         with _env_override({}):
             limits = _limits_dict(get_limits())
         q = limits["query"]
-        assert q["max_rows"]["value"] == 5_000
-        assert q["hard_row_limit"]["value"] == HARD_ROW_LIMIT
+        assert q["max_rows"]["value"] == 500
+        assert q["hard_row_limit"]["value"] == INTERACTIVE_HARD_ROW_LIMIT
         assert q["command_timeout_seconds"]["value"] == 30
         assert q["max_rows"]["scope"] == "query"
 
@@ -72,13 +72,13 @@ class TestGetLimits:
     def test_max_rows_clamped_to_hard_limit(self) -> None:
         with _env_override({"MCP_CLICKHOUSE_QUERY_MAX_ROWS": "999999"}):
             limits = _limits_dict(get_limits())
-        assert limits["query"]["max_rows"]["value"] == HARD_ROW_LIMIT
+        assert limits["query"]["max_rows"]["value"] == INTERACTIVE_HARD_ROW_LIMIT
 
 
 class TestGetMaxRows:
     def test_returns_max_rows_for_default(self) -> None:
         with _env_override({}):
-            assert get_max_rows() == 5_000
+            assert get_max_rows() == 500
         with _env_override({"MCP_CLICKHOUSE_QUERY_MAX_ROWS": "100"}):
             assert get_max_rows() == 100
 

@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
+import csv
+import io
 from collections.abc import Sequence
 from typing import Any
 
-from mcp_clickhousex.config import get_client, get_command_timeout, get_max_rows
-from mcp_clickhousex.models import ExplainResult, QueryResult
+from mcp_clickhousex import snapshots
+from mcp_clickhousex.config import (
+    get_client,
+    get_command_timeout,
+    get_max_rows,
+    get_snapshot_max_rows,
+    get_snapshot_timeout,
+)
+from mcp_clickhousex.models import (
+    ExplainResult,
+    QueryResult,
+    ShowResult,
+    SnapshotResult,
+)
 from mcp_clickhousex.validation import validate_read_only, validate_show_statement
 
 _ALLOWED_EXPLAIN_TYPES = frozenset({"plan", "pipeline", "syntax"})
@@ -19,17 +33,31 @@ _EXPLAIN_PREFIX: dict[str, str] = {
 }
 
 
+def _to_csv(columns: list[str], rows: list[list[Any]]) -> str:
+    """Serialize *columns* and *rows* to an RFC 4180 CSV string."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(columns)
+    writer.writerows(rows)
+    return buf.getvalue()
+
+
 def run_query(
     sql: str,
     parameters: dict[str, Any] | None = None,
     database: str | None = None,
     profile: str | None = None,
-) -> QueryResult:
-    """Execute a read-only SELECT and return ``{columns, rows}``.
+    snapshot: bool = False,
+) -> QueryResult | SnapshotResult:
+    """Execute a read-only SELECT and return the result.
 
-    Applies the profile's max_rows limit via ClickHouse max_result_rows;
-    if the result exceeds the limit, rows are truncated and ``truncated``
-    is set to true.
+    When *snapshot* is ``False`` (default), returns ``{data, row_count}``
+    where ``data`` is an RFC 4180 CSV string (header + rows).  Interactive
+    row limits apply (default 500, hard ceiling 1 000).
+
+    When *snapshot* is ``True``, persists the full result as a CSV file and
+    returns ``{snapshot_uri, row_count}``.  Snapshot limits apply (default
+    10 000, hard ceiling 50 000).  Entries expire after 7 days.
     """
     validate_read_only(sql)
 
@@ -37,8 +65,13 @@ def run_query(
     if parameters is None:
         parameters = {}
 
-    max_rows = get_max_rows(profile)
-    timeout = get_command_timeout(profile)
+    if snapshot:
+        max_rows = get_snapshot_max_rows(profile)
+        timeout = get_snapshot_timeout(profile)
+    else:
+        max_rows = get_max_rows(profile)
+        timeout = get_command_timeout(profile)
+
     settings: dict[str, Any] = {
         # +1 so we can detect truncation: max_rows+1 returned means more rows existed.
         "max_result_rows": max_rows + 1,
@@ -57,9 +90,18 @@ def run_query(
     if truncated:
         rows = rows[:max_rows]
 
+    if snapshot:
+        snapshot_id = snapshots.save(columns, rows)
+        return SnapshotResult(
+            snapshot_uri=f"clickhouse://snapshots/{snapshot_id}",
+            row_count=len(rows),
+            truncated=True if truncated else None,
+            row_limit=max_rows if truncated else None,
+        )
+
     return QueryResult(
-        columns=columns,
-        rows=rows,
+        data=_to_csv(columns, rows),
+        row_count=len(rows),
         truncated=True if truncated else None,
         row_limit=max_rows if truncated else None,
     )
@@ -70,12 +112,12 @@ def run_show(
     parameters: dict[str, Any] | None = None,
     database: str | None = None,
     profile: str | None = None,
-) -> QueryResult:
+) -> ShowResult:
     """Execute a SHOW statement and return ``{columns, rows}``.
 
-    Applies the profile's max_rows limit via ClickHouse max_result_rows;
-    if the result exceeds the limit, rows are truncated and ``truncated``
-    is set to true.
+    Applies the profile's interactive max_rows limit via ClickHouse
+    max_result_rows; if the result exceeds the limit, rows are truncated
+    and ``truncated`` is set to true.
     """
     validate_show_statement(sql)
 
@@ -103,7 +145,7 @@ def run_show(
     if truncated:
         rows = rows[:max_rows]
 
-    return QueryResult(
+    return ShowResult(
         columns=columns,
         rows=rows,
         truncated=True if truncated else None,

@@ -13,7 +13,7 @@ import pytest
 from mcp_clickhousex.config import (
     DEFAULT_PROFILE_NAME,
     HARD_COMMAND_TIMEOUT_SECONDS,
-    HARD_ROW_LIMIT,
+    INTERACTIVE_HARD_ROW_LIMIT,
     get_client,
     get_limits,
     get_max_rows,
@@ -203,18 +203,18 @@ class TestGetLimitsPerProfile:
         with _env(
             {
                 "MCP_CLICKHOUSE_PROFILES_WH_DSN": "http://wh:8123",
-                "MCP_CLICKHOUSE_PROFILES_WH_QUERY_MAX_ROWS": "8000",
+                "MCP_CLICKHOUSE_PROFILES_WH_QUERY_MAX_ROWS": "800",
                 "MCP_CLICKHOUSE_PROFILES_WH_QUERY_COMMAND_TIMEOUT_SECONDS": "120",
             }
         ):
             limits = _limits_dict(get_limits("wh"))
-        assert limits["query"]["max_rows"]["value"] == 8000
+        assert limits["query"]["max_rows"]["value"] == 800
         assert limits["query"]["command_timeout_seconds"]["value"] == 120
 
     def test_named_profile_defaults_when_unset(self) -> None:
         with _env({"MCP_CLICKHOUSE_PROFILES_WH_DSN": "http://wh:8123"}):
             limits = _limits_dict(get_limits("wh"))
-        assert limits["query"]["max_rows"]["value"] == 5_000
+        assert limits["query"]["max_rows"]["value"] == 500
         assert limits["query"]["command_timeout_seconds"]["value"] == 30
 
     def test_limits_clamped_to_hard_max(self) -> None:
@@ -226,7 +226,7 @@ class TestGetLimitsPerProfile:
             }
         ):
             limits = _limits_dict(get_limits("wh"))
-        assert limits["query"]["max_rows"]["value"] == HARD_ROW_LIMIT
+        assert limits["query"]["max_rows"]["value"] == INTERACTIVE_HARD_ROW_LIMIT
         assert (
             limits["query"]["command_timeout_seconds"]["value"]
             == HARD_COMMAND_TIMEOUT_SECONDS
@@ -241,10 +241,10 @@ class TestGetMaxRowsPerProfile:
         with _env(
             {
                 "MCP_CLICKHOUSE_PROFILES_WH_DSN": "http://wh:8123",
-                "MCP_CLICKHOUSE_PROFILES_WH_QUERY_MAX_ROWS": "2000",
+                "MCP_CLICKHOUSE_PROFILES_WH_QUERY_MAX_ROWS": "800",
             }
         ):
-            assert get_max_rows("wh") == 2000
+            assert get_max_rows("wh") == 800
 
 
 # -- Multiple profiles (profile-based feature) ---------------------------------
@@ -261,7 +261,7 @@ class TestMultipleProfilesFeature:
                 "MCP_CLICKHOUSE_QUERY_MAX_ROWS": "1000",
                 "MCP_CLICKHOUSE_PROFILES_ALPHA_DSN": "http://alpha:8123",
                 "MCP_CLICKHOUSE_PROFILES_ALPHA_DESCRIPTION": "Alpha cluster",
-                "MCP_CLICKHOUSE_PROFILES_ALPHA_QUERY_MAX_ROWS": "2000",
+                "MCP_CLICKHOUSE_PROFILES_ALPHA_QUERY_MAX_ROWS": "800",
                 "MCP_CLICKHOUSE_PROFILES_ALPHA_QUERY_COMMAND_TIMEOUT_SECONDS": "60",
                 "MCP_CLICKHOUSE_PROFILES_BETA_DSN": "http://beta:8123",
                 "MCP_CLICKHOUSE_PROFILES_BETA_DESCRIPTION": "Beta cluster",
@@ -279,13 +279,13 @@ class TestMultipleProfilesFeature:
 
             assert get_max_rows(None) == 1000
             assert get_max_rows("default") == 1000
-            assert get_max_rows("alpha") == 2000
+            assert get_max_rows("alpha") == 800
             assert get_max_rows("beta") == 500
 
             default_limits = _limits_dict(get_limits("default"))
             assert default_limits["query"]["max_rows"]["value"] == 1000
             alpha_limits = _limits_dict(get_limits("alpha"))
-            assert alpha_limits["query"]["max_rows"]["value"] == 2000
+            assert alpha_limits["query"]["max_rows"]["value"] == 800
             assert alpha_limits["query"]["command_timeout_seconds"]["value"] == 60
             beta_limits = _limits_dict(get_limits("beta"))
             assert beta_limits["query"]["max_rows"]["value"] == 500
@@ -312,13 +312,13 @@ class TestUserConfigFile:
     "default": {
       "dsn": "http://file-default:8123/default",
       "description": "From file",
-      "query_max_rows": 3000,
+      "query_max_rows": 900,
       "query_command_timeout_seconds": 45
     },
     "warehouse": {
       "dsn": "http://file-wh:8123/analytics",
       "description": "Warehouse from file",
-      "query_max_rows": 8000,
+      "query_max_rows": 700,
       "query_command_timeout_seconds": 120
     }
   }
@@ -335,8 +335,8 @@ class TestUserConfigFile:
                 by_name = {p["name"]: p for p in profiles}
                 assert by_name["default"]["description"] == "From file"
                 assert by_name["warehouse"]["description"] == "Warehouse from file"
-                assert get_max_rows("default") == 3000
-                assert get_max_rows("warehouse") == 8000
+                assert get_max_rows("default") == 900
+                assert get_max_rows("warehouse") == 700
                 limits_default = _limits_dict(get_limits("default"))
                 assert limits_default["query"]["command_timeout_seconds"]["value"] == 45
                 limits_wh = _limits_dict(get_limits("warehouse"))
@@ -354,8 +354,8 @@ class TestUserConfigFile:
             "mcp_clickhousex.config._user_config_path", return_value=config_path
         ):
             with _env({"MCP_CLICKHOUSE_QUERY_MAX_ROWS": "9999"}):
-                # Env overrides file: 3000 from file, 9999 from env (capped)
-                assert get_max_rows(None) == 9999
+                # Env wins: 9999, clamped to INTERACTIVE_HARD_ROW_LIMIT
+                assert get_max_rows(None) == INTERACTIVE_HARD_ROW_LIMIT
                 profiles = _profile_dicts(get_profiles())
                 default = [p for p in profiles if p["name"] == DEFAULT_PROFILE_NAME][0]
                 assert default["description"] == "File"

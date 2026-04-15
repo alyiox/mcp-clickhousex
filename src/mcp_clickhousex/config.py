@@ -8,15 +8,19 @@ Structured (named profiles)::
 
     MCP_CLICKHOUSE_PROFILES_<NAME>_DSN=clickhouse://...
     MCP_CLICKHOUSE_PROFILES_<NAME>_DESCRIPTION=...
-    MCP_CLICKHOUSE_PROFILES_<NAME>_QUERY_MAX_ROWS=5000
+    MCP_CLICKHOUSE_PROFILES_<NAME>_QUERY_MAX_ROWS=500
     MCP_CLICKHOUSE_PROFILES_<NAME>_QUERY_COMMAND_TIMEOUT_SECONDS=60
+    MCP_CLICKHOUSE_PROFILES_<NAME>_SNAPSHOT_MAX_ROWS=10000
+    MCP_CLICKHOUSE_PROFILES_<NAME>_SNAPSHOT_COMMAND_TIMEOUT_SECONDS=120
 
 Flat (default profile only, backward compatible)::
 
     MCP_CLICKHOUSE_DSN=clickhouse://...
     MCP_CLICKHOUSE_DESCRIPTION=...
-    MCP_CLICKHOUSE_QUERY_MAX_ROWS=5000
+    MCP_CLICKHOUSE_QUERY_MAX_ROWS=500
     MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS=60
+    MCP_CLICKHOUSE_SNAPSHOT_MAX_ROWS=10000
+    MCP_CLICKHOUSE_SNAPSHOT_COMMAND_TIMEOUT_SECONDS=120
 
 Flat vars always win over structured vars for the default profile.
 Profile names are case-insensitive and must be alphanumeric (no
@@ -45,12 +49,15 @@ from mcp_clickhousex.models import (
 
 DEFAULT_PROFILE_NAME = "default"
 
-HARD_ROW_LIMIT = 50_000
+INTERACTIVE_HARD_ROW_LIMIT = 1_000
+SNAPSHOT_HARD_ROW_LIMIT = 50_000
 HARD_COMMAND_TIMEOUT_SECONDS = 300
 
 _DEFAULT_DSN = "http://default:@localhost:8123/default"
-_DEFAULT_QUERY_MAX_ROWS = 5_000
+_DEFAULT_QUERY_MAX_ROWS = 500
 _DEFAULT_QUERY_COMMAND_TIMEOUT_SECONDS = 30
+_DEFAULT_SNAPSHOT_MAX_ROWS = 10_000
+_DEFAULT_SNAPSHOT_COMMAND_TIMEOUT_SECONDS = 120
 
 _STRUCTURED_PREFIX = "MCP_CLICKHOUSE_PROFILES_"
 
@@ -59,10 +66,16 @@ _FLAT_MAP: dict[str, str] = {
     "MCP_CLICKHOUSE_DESCRIPTION": "description",
     "MCP_CLICKHOUSE_QUERY_MAX_ROWS": "query_max_rows",
     "MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS": "query_command_timeout_seconds",
+    "MCP_CLICKHOUSE_SNAPSHOT_MAX_ROWS": "snapshot_max_rows",
+    "MCP_CLICKHOUSE_SNAPSHOT_COMMAND_TIMEOUT_SECONDS": (
+        "snapshot_command_timeout_seconds"
+    ),
 }
 
 _KNOWN_SUFFIXES: tuple[tuple[str, str], ...] = (
+    ("SNAPSHOT_COMMAND_TIMEOUT_SECONDS", "snapshot_command_timeout_seconds"),
     ("QUERY_COMMAND_TIMEOUT_SECONDS", "query_command_timeout_seconds"),
+    ("SNAPSHOT_MAX_ROWS", "snapshot_max_rows"),
     ("QUERY_MAX_ROWS", "query_max_rows"),
     ("DESCRIPTION", "description"),
     ("DSN", "dsn"),
@@ -77,6 +90,8 @@ class _ProfileData:
     description: str | None = None
     query_max_rows: int = _DEFAULT_QUERY_MAX_ROWS
     query_command_timeout_seconds: int = _DEFAULT_QUERY_COMMAND_TIMEOUT_SECONDS
+    snapshot_max_rows: int = _DEFAULT_SNAPSHOT_MAX_ROWS
+    snapshot_command_timeout_seconds: int = _DEFAULT_SNAPSHOT_COMMAND_TIMEOUT_SECONDS
 
 
 @dataclass
@@ -94,6 +109,8 @@ _JSON_PROFILE_KEYS: tuple[tuple[str, str], ...] = (
     ("description", "description"),
     ("query_max_rows", "query_max_rows"),
     ("query_command_timeout_seconds", "query_command_timeout_seconds"),
+    ("snapshot_max_rows", "snapshot_max_rows"),
+    ("snapshot_command_timeout_seconds", "snapshot_command_timeout_seconds"),
 )
 
 
@@ -184,12 +201,24 @@ def _materialize(raw: dict[str, str]) -> _ProfileData:
     data.description = desc.strip() if desc and desc.strip() else None
     if "query_max_rows" in raw:
         data.query_max_rows = _clamp_int(
-            raw["query_max_rows"], _DEFAULT_QUERY_MAX_ROWS, HARD_ROW_LIMIT
+            raw["query_max_rows"], _DEFAULT_QUERY_MAX_ROWS, INTERACTIVE_HARD_ROW_LIMIT
         )
     if "query_command_timeout_seconds" in raw:
         data.query_command_timeout_seconds = _clamp_int(
             raw["query_command_timeout_seconds"],
             _DEFAULT_QUERY_COMMAND_TIMEOUT_SECONDS,
+            HARD_COMMAND_TIMEOUT_SECONDS,
+        )
+    if "snapshot_max_rows" in raw:
+        data.snapshot_max_rows = _clamp_int(
+            raw["snapshot_max_rows"],
+            _DEFAULT_SNAPSHOT_MAX_ROWS,
+            SNAPSHOT_HARD_ROW_LIMIT,
+        )
+    if "snapshot_command_timeout_seconds" in raw:
+        data.snapshot_command_timeout_seconds = _clamp_int(
+            raw["snapshot_command_timeout_seconds"],
+            _DEFAULT_SNAPSHOT_COMMAND_TIMEOUT_SECONDS,
             HARD_COMMAND_TIMEOUT_SECONDS,
         )
     return data
@@ -308,13 +337,19 @@ def get_limits(profile: str | None = None) -> ExecutionLimits:
         query=QueryLimits(
             max_rows=OptionDescriptor[int](
                 value=data.query_max_rows,
-                description="Row cap applied to every query. Use LIMIT for pagination.",
+                description=(
+                    "Row cap applied to every interactive query. "
+                    "Use snapshot=true for larger result sets."
+                ),
                 is_overridable=False,
                 scope="query",
             ),
             hard_row_limit=OptionDescriptor[int](
-                value=HARD_ROW_LIMIT,
-                description="Absolute row ceiling; max_rows is clamped to this value.",
+                value=INTERACTIVE_HARD_ROW_LIMIT,
+                description=(
+                    "Absolute row ceiling for interactive queries; "
+                    "max_rows is clamped to this value."
+                ),
                 is_overridable=False,
                 scope="query",
             ),
@@ -327,7 +362,36 @@ def get_limits(profile: str | None = None) -> ExecutionLimits:
                 is_overridable=False,
                 scope="query",
             ),
-        )
+        ),
+        snapshot=QueryLimits(
+            max_rows=OptionDescriptor[int](
+                value=data.snapshot_max_rows,
+                description=(
+                    "Row cap applied to snapshot queries (snapshot=true). "
+                    "Result is persisted to disk; fetch via the snapshot URI."
+                ),
+                is_overridable=False,
+                scope="snapshot",
+            ),
+            hard_row_limit=OptionDescriptor[int](
+                value=SNAPSHOT_HARD_ROW_LIMIT,
+                description=(
+                    "Absolute row ceiling for snapshot queries; "
+                    "snapshot_max_rows is clamped to this value."
+                ),
+                is_overridable=False,
+                scope="snapshot",
+            ),
+            command_timeout_seconds=OptionDescriptor[int](
+                value=data.snapshot_command_timeout_seconds,
+                description=(
+                    "Maximum execution time allowed for a snapshot query before it "
+                    "is terminated."
+                ),
+                is_overridable=False,
+                scope="snapshot",
+            ),
+        ),
     )
 
 
@@ -341,3 +405,15 @@ def get_command_timeout(profile: str | None = None) -> int:
     """Return the command timeout in seconds for the given profile."""
     _, data = _lookup(profile)
     return data.query_command_timeout_seconds
+
+
+def get_snapshot_max_rows(profile: str | None = None) -> int:
+    """Return the snapshot max_rows limit for the given profile."""
+    _, data = _lookup(profile)
+    return data.snapshot_max_rows
+
+
+def get_snapshot_timeout(profile: str | None = None) -> int:
+    """Return the snapshot command timeout in seconds for the given profile."""
+    _, data = _lookup(profile)
+    return data.snapshot_command_timeout_seconds
