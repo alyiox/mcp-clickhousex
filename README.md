@@ -1,5 +1,7 @@
 # MCP ClickHouse Tool
 
+<!-- mcp-name: io.github.alyiox/mcp-clickhousex -->
+
 [![Build Status](https://github.com/alyiox/mcp-clickhousex/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alyiox/mcp-clickhousex/actions/workflows/ci.yml)
 [![PyPI Version](https://img.shields.io/pypi/v/mcp-clickhousex.svg)](https://pypi.org/project/mcp-clickhousex/)
 

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.alyiox/mcp-clickhousex",
+  "title": "MCP ClickHouse Tool",
+  "description": "A read-only Model Context Protocol server for ClickHouse metadata discovery, parameterized queries, and execution plan analysis.",
+  "repository": {
+    "url": "https://github.com/alyiox/mcp-clickhousex",
+    "source": "github"
+  },
+  "version": "0.6.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "mcp-clickhousex",
+      "version": "0.6.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MCP_CLICKHOUSE_DSN",
+          "description": "Optional shortcut DSN for the default profile, for example http://user:password@host:8123/database. For multiple profiles, use ~/.config/mcp-clickhousex/config.json or MCP_CLICKHOUSE_PROFILES_<NAME>_DSN.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
