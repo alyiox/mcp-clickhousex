@@ -1,4 +1,4 @@
-name: CI/CD
+name: ci
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Lint and Format
+      - name: Lint and format
         run: |
           uv run ruff check src/ tests/
           uv run ruff format --check src/ tests/
@@ -58,7 +58,7 @@ jobs:
         run: uv run pytest tests/ -v --tb=short
 
   publish:
-    name: Publish packages
+    name: Publish to PyPI and MCP registry
     needs: test
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
@@ -77,7 +77,7 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Build package
+      - name: Build Python package
         run: uv build
 
       - name: Publish to PyPI
@@ -87,15 +87,15 @@ jobs:
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
 
-      - name: Set MCP Registry version
+      - name: Set MCP registry version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           jq --arg version "$VERSION" '.version = $version | .packages[].version = $version' server.json > server.tmp
           mv server.tmp server.json
 
-      - name: Authenticate to MCP Registry
+      - name: Authenticate with MCP registry
         run: ./mcp-publisher login github-oidc
 
-      - name: Publish to MCP Registry
+      - name: Publish to MCP registry
         run: ./mcp-publisher publish
 
