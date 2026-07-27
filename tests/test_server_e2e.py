@@ -71,6 +71,36 @@ class TestToolSchemasE2E:
             assert _tool_description_matches_doc(fn, by_name[name].description), name
 
     @pytest.mark.anyio
+    async def test_all_tools_annotated_read_only(self, client) -> None:
+        result = await client.list_tools()
+        assert len(result.tools) == 8
+        for tool in result.tools:
+            assert tool.annotations is not None, tool.name
+            assert tool.annotations.readOnlyHint is True, tool.name
+            # Meaningful only when readOnlyHint is false; must stay unset.
+            assert tool.annotations.destructiveHint is None, tool.name
+            assert tool.annotations.idempotentHint is None, tool.name
+
+    @pytest.mark.anyio
+    async def test_open_world_hint_marks_free_form_sql_tools(self, client) -> None:
+        # run_query and analyze_query accept arbitrary SELECT, and
+        # validate_read_only screens statement keywords, not table functions —
+        # url()/s3()/remote() reach hosts beyond the configured profile.
+        expected = {
+            "list_profiles": False,
+            "get_cluster_properties": False,
+            "run_query": True,
+            "run_show": False,
+            "analyze_query": True,
+            "list_databases": False,
+            "list_tables": False,
+            "list_columns": False,
+        }
+        result = await client.list_tools()
+        actual = {t.name: t.annotations.openWorldHint for t in result.tools}
+        assert actual == expected
+
+    @pytest.mark.anyio
     async def test_run_query_schema_includes_parameter_descriptions(
         self, client
     ) -> None:

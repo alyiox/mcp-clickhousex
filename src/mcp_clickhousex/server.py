@@ -7,6 +7,7 @@ from importlib.metadata import version
 from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from mcp_clickhousex import metadata, query, snapshots
@@ -26,6 +27,19 @@ from mcp_clickhousex.models import (
 
 mcp = FastMCP("mcp-clickhousex", json_response=True)
 
+# Tool hints. Every tool here is read-only: validation rejects DML, DDL, SET,
+# SYSTEM and friends, so none mutates ClickHouse state. destructiveHint and
+# idempotentHint stay unset throughout — both are meaningful only when
+# readOnlyHint is false.
+#
+# openWorldHint splits the tools in two. Introspection and SHOW reach only the
+# ClickHouse endpoints named by the configured profiles, a closed domain. The
+# free-form SQL tools do not: validate_read_only screens statement keywords, not
+# table functions, so url(), s3(), remote() and mysql() can pull from arbitrary
+# external hosts.
+_READ_ONLY_CLOSED = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+_READ_ONLY_OPEN = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
+
 
 def main() -> None:
     """CLI entrypoint for ``uvx mcp-clickhousex``."""
@@ -35,7 +49,7 @@ def main() -> None:
     mcp.run(transport="stdio")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY_CLOSED)
 def list_profiles() -> list[Profile]:
     """[ClickHouse] List configured profiles.
 
@@ -44,7 +58,7 @@ def list_profiles() -> list[Profile]:
     return get_profiles()
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY_CLOSED)
 def get_cluster_properties(
     profile: Annotated[
         str | None,
@@ -63,7 +77,7 @@ def get_cluster_properties(
     return get_cluster_properties_impl(profile)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY_OPEN)
 def run_query(
     sql: Annotated[
         str,
@@ -132,7 +146,7 @@ def run_query(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY_CLOSED)
 def run_show(
     sql: Annotated[
         str,
@@ -179,7 +193,7 @@ def run_show(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY_OPEN)
 def analyze_query(
     sql: Annotated[
         str,
@@ -236,7 +250,7 @@ def analyze_query(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY_CLOSED)
 def list_databases(
     profile: Annotated[
         str | None,
@@ -254,7 +268,7 @@ def list_databases(
     return metadata.list_databases(profile=profile)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY_CLOSED)
 def list_tables(
     database: Annotated[
         str | None,
@@ -281,7 +295,7 @@ def list_tables(
     return metadata.list_tables(database, profile=profile)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ_ONLY_CLOSED)
 def list_columns(
     table: Annotated[
         str,
