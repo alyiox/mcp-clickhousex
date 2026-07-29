@@ -6,7 +6,7 @@ import sys
 from importlib.metadata import version
 from typing import Annotated, Any, Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -25,20 +25,22 @@ from mcp_clickhousex.models import (
     TabularResult,
 )
 
-mcp = FastMCP("mcp-clickhousex", json_response=True)
+# json_response moved off the constructor in mcp 2.0; it is a
+# run_streamable_http_async() option now and never applied to this stdio server.
+mcp = MCPServer("mcp-clickhousex")
 
 # Tool hints. Every tool here is read-only: validation rejects DML, DDL, SET,
-# SYSTEM and friends, so none mutates ClickHouse state. destructiveHint and
-# idempotentHint stay unset throughout — both are meaningful only when
-# readOnlyHint is false.
+# SYSTEM and friends, so none mutates ClickHouse state. destructive_hint and
+# idempotent_hint stay unset throughout — both are meaningful only when
+# read_only_hint is false.
 #
-# openWorldHint splits the tools in two. Introspection and SHOW reach only the
+# open_world_hint splits the tools in two. Introspection and SHOW reach only the
 # ClickHouse endpoints named by the configured profiles, a closed domain. The
 # free-form SQL tools do not: validate_read_only screens statement keywords, not
 # table functions, so url(), s3(), remote() and mysql() can pull from arbitrary
 # external hosts.
-_READ_ONLY_CLOSED = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
-_READ_ONLY_OPEN = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
+_READ_ONLY_CLOSED = ToolAnnotations(read_only_hint=True, open_world_hint=False)
+_READ_ONLY_OPEN = ToolAnnotations(read_only_hint=True, open_world_hint=True)
 
 
 def main() -> None:

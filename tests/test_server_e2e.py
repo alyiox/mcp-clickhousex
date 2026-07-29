@@ -6,7 +6,7 @@ import io
 import json
 
 import pytest
-from mcp.shared.memory import create_connected_server_and_client_session
+from mcp import Client
 
 from mcp_clickhousex.server import (
     analyze_query,
@@ -23,7 +23,7 @@ from mcp_clickhousex.server import (
 
 @pytest.fixture()
 async def client():
-    async with create_connected_server_and_client_session(mcp) as session:
+    async with Client(mcp) as session:
         yield session
 
 
@@ -76,10 +76,10 @@ class TestToolSchemasE2E:
         assert len(result.tools) == 8
         for tool in result.tools:
             assert tool.annotations is not None, tool.name
-            assert tool.annotations.readOnlyHint is True, tool.name
-            # Meaningful only when readOnlyHint is false; must stay unset.
-            assert tool.annotations.destructiveHint is None, tool.name
-            assert tool.annotations.idempotentHint is None, tool.name
+            assert tool.annotations.read_only_hint is True, tool.name
+            # Meaningful only when read_only_hint is false; must stay unset.
+            assert tool.annotations.destructive_hint is None, tool.name
+            assert tool.annotations.idempotent_hint is None, tool.name
 
     @pytest.mark.anyio
     async def test_open_world_hint_marks_free_form_sql_tools(self, client) -> None:
@@ -97,7 +97,7 @@ class TestToolSchemasE2E:
             "list_columns": False,
         }
         result = await client.list_tools()
-        actual = {t.name: t.annotations.openWorldHint for t in result.tools}
+        actual = {t.name: t.annotations.open_world_hint for t in result.tools}
         assert actual == expected
 
     @pytest.mark.anyio
@@ -107,7 +107,7 @@ class TestToolSchemasE2E:
         result = await client.list_tools()
         tool = _tool_by_name(result, "run_query")
         assert _tool_description_matches_doc(run_query, tool.description)
-        props = tool.inputSchema["properties"]
+        props = tool.input_schema["properties"]
         assert props["sql"]["description"] == (
             "Read-only SELECT or WITH … SELECT. One statement; use qualified "
             "db.table or database. Driver placeholder syntax for parameters."
@@ -129,7 +129,7 @@ class TestToolSchemasE2E:
         result = await client.list_tools()
         tool = _tool_by_name(result, "run_show")
         assert _tool_description_matches_doc(run_show, tool.description)
-        props = tool.inputSchema["properties"]
+        props = tool.input_schema["properties"]
         assert props["sql"]["description"] == (
             "Single SHOW statement (e.g. SHOW DATABASES, SHOW CREATE TABLE). "
             "No INTO OUTFILE."
@@ -151,7 +151,7 @@ class TestToolSchemasE2E:
         result = await client.list_tools()
         tool = _tool_by_name(result, "analyze_query")
         assert _tool_description_matches_doc(analyze_query, tool.description)
-        props = tool.inputSchema["properties"]
+        props = tool.input_schema["properties"]
         assert props["sql"]["description"] == (
             "Read-only SELECT or WITH … SELECT for EXPLAIN. One statement; "
             "same validation as run_query."
@@ -174,11 +174,11 @@ class TestToolSchemasE2E:
     async def test_list_metadata_tools_schema_descriptions(self, client) -> None:
         result = await client.list_tools()
         db_tool = _tool_by_name(result, "list_databases")
-        assert db_tool.inputSchema["properties"]["profile"]["description"] == (
+        assert db_tool.input_schema["properties"]["profile"]["description"] == (
             "Profile name; uses default profile when omitted. Src: profiles."
         )
         tables_tool = _tool_by_name(result, "list_tables")
-        tp = tables_tool.inputSchema["properties"]
+        tp = tables_tool.input_schema["properties"]
         assert tp["database"]["description"] == (
             "Database to list; client default when omitted. Src: databases."
         )
@@ -186,7 +186,7 @@ class TestToolSchemasE2E:
             "Profile name; uses default profile when omitted. Src: profiles."
         )
         cols_tool = _tool_by_name(result, "list_columns")
-        cp = cols_tool.inputSchema["properties"]
+        cp = cols_tool.input_schema["properties"]
         assert cp["table"]["description"] == (
             "Table or view name, or database.table. Src: tables."
         )
@@ -198,7 +198,7 @@ class TestToolSchemasE2E:
             "Profile name; uses default profile when omitted. Src: profiles."
         )
         cluster_tool = _tool_by_name(result, "get_cluster_properties")
-        assert cluster_tool.inputSchema["properties"]["profile"]["description"] == (
+        assert cluster_tool.input_schema["properties"]["profile"]["description"] == (
             "Profile name; uses default profile when omitted. Src: profiles."
         )
 
@@ -208,7 +208,7 @@ class TestToolSchemasE2E:
 
         # run_query returns QueryResult | SnapshotResult (anyOf union via $defs)
         run_query_tool = _tool_by_name(result, "run_query")
-        schema = run_query_tool.outputSchema
+        schema = run_query_tool.output_schema
         defs = schema.get("$defs", {})
         assert "QueryResult" in defs
         assert "SnapshotResult" in defs
@@ -218,14 +218,14 @@ class TestToolSchemasE2E:
         assert "row_count" in defs["SnapshotResult"]["properties"]
 
         run_show_tool = _tool_by_name(result, "run_show")
-        show_props = run_show_tool.outputSchema["properties"]
+        show_props = run_show_tool.output_schema["properties"]
         assert show_props["columns"]["type"] == "array"
         assert show_props["rows"]["type"] == "array"
         assert show_props["truncated"]["anyOf"][0]["type"] == "boolean"
         assert show_props["row_limit"]["anyOf"][0]["type"] == "integer"
 
         analyze_tool = _tool_by_name(result, "analyze_query")
-        analyze_props = analyze_tool.outputSchema["properties"]
+        analyze_props = analyze_tool.output_schema["properties"]
         assert analyze_props["plan"]["anyOf"][0]["type"] == "string"
         assert analyze_props["pipeline"]["anyOf"][0]["type"] == "string"
         assert analyze_props["syntax"]["anyOf"][0]["type"] == "string"
@@ -238,7 +238,7 @@ class TestRunQueryE2E:
     @pytest.mark.anyio
     async def test_simple_select(self, client) -> None:
         result = await client.call_tool("run_query", {"sql": "SELECT 1 AS n"})
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "data" in data
         assert data["row_count"] == 1
@@ -252,7 +252,7 @@ class TestRunQueryE2E:
             "run_query",
             {"sql": "SELECT id, name FROM test_table ORDER BY id"},
         )
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert data["row_count"] == 3
         headers, rows = _parse_query_csv(data)
@@ -269,7 +269,7 @@ class TestRunQueryE2E:
                 "parameters": {"target_id": 2},
             },
         )
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         _, rows = _parse_query_csv(data)
         assert rows == [["bob"]]
@@ -280,7 +280,7 @@ class TestRunQueryE2E:
             "run_query",
             {"sql": "SELECT id, name FROM test_table ORDER BY id", "snapshot": True},
         )
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "snapshot_uri" in data
         assert data["snapshot_uri"].startswith("chx://snapshots/")
@@ -292,12 +292,12 @@ class TestRunQueryE2E:
             "run_query",
             {"sql": "INSERT INTO test_table VALUES (99, 'bad')"},
         )
-        assert result.isError
+        assert result.is_error
 
     @pytest.mark.anyio
     async def test_rejects_empty(self, client) -> None:
         result = await client.call_tool("run_query", {"sql": ""})
-        assert result.isError
+        assert result.is_error
 
 
 # -- run_show ------------------------------------------------------------------
@@ -307,7 +307,7 @@ class TestRunShowE2E:
     @pytest.mark.anyio
     async def test_show_databases(self, client) -> None:
         result = await client.call_tool("run_show", {"sql": "SHOW DATABASES"})
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "name" in data["columns"]
         names = [row[data["columns"].index("name")] for row in data["rows"]]
@@ -316,7 +316,7 @@ class TestRunShowE2E:
     @pytest.mark.anyio
     async def test_rejects_select(self, client) -> None:
         result = await client.call_tool("run_show", {"sql": "SELECT 1"})
-        assert result.isError
+        assert result.is_error
 
 
 # -- analyze_query -------------------------------------------------------------
@@ -326,7 +326,7 @@ class TestAnalyzeQueryE2E:
     @pytest.mark.anyio
     async def test_default_types(self, client) -> None:
         result = await client.call_tool("analyze_query", {"sql": "SELECT 1 AS n"})
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "plan" in data
         assert "pipeline" in data
@@ -339,7 +339,7 @@ class TestAnalyzeQueryE2E:
             "analyze_query",
             {"sql": "SELECT number FROM numbers(10)", "types": ["syntax"]},
         )
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "syntax" in data
         assert "plan" not in data
@@ -351,7 +351,7 @@ class TestAnalyzeQueryE2E:
             "analyze_query",
             {"sql": "INSERT INTO test_table VALUES (99, 'bad')"},
         )
-        assert result.isError
+        assert result.is_error
 
     @pytest.mark.anyio
     async def test_rejects_invalid_type(self, client) -> None:
@@ -359,7 +359,7 @@ class TestAnalyzeQueryE2E:
             "analyze_query",
             {"sql": "SELECT 1", "types": ["bogus"]},
         )
-        assert result.isError
+        assert result.is_error
 
 
 # -- list_databases ------------------------------------------------------------
@@ -369,7 +369,7 @@ class TestListDatabasesE2E:
     @pytest.mark.anyio
     async def test_returns_databases(self, client) -> None:
         result = await client.call_tool("list_databases", {})
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "name" in data["columns"]
         name_idx = data["columns"].index("name")
@@ -380,7 +380,7 @@ class TestListDatabasesE2E:
     @pytest.mark.anyio
     async def test_accepts_profile_param(self, client) -> None:
         result = await client.call_tool("list_databases", {"profile": "default"})
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "name" in data["columns"]
 
@@ -392,7 +392,7 @@ class TestListTablesE2E:
     @pytest.mark.anyio
     async def test_lists_test_table(self, client) -> None:
         result = await client.call_tool("list_tables", {})
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         for col in ("name", "engine", "primary_key", "sorting_key", "partition_key"):
             assert col in data["columns"], f"missing column {col}"
@@ -403,7 +403,7 @@ class TestListTablesE2E:
     @pytest.mark.anyio
     async def test_accepts_profile_param(self, client) -> None:
         result = await client.call_tool("list_tables", {"profile": "default"})
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "name" in data["columns"]
 
@@ -415,7 +415,7 @@ class TestListProfilesE2E:
     @pytest.mark.anyio
     async def test_returns_profiles(self, client) -> None:
         result = await client.call_tool("list_profiles", {})
-        assert not result.isError
+        assert not result.is_error
         profiles = [json.loads(c.text) for c in result.content]
         assert len(profiles) >= 1
         names = [p["name"] for p in profiles]
@@ -431,7 +431,7 @@ class TestGetClusterPropertiesE2E:
     @pytest.mark.anyio
     async def test_returns_version_and_limits(self, client) -> None:
         result = await client.call_tool("get_cluster_properties", {})
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "version" in data
         assert "limits" in data
@@ -446,7 +446,7 @@ class TestGetClusterPropertiesE2E:
         result = await client.call_tool(
             "get_cluster_properties", {"profile": "default"}
         )
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "version" in data
         assert "limits" in data
@@ -459,7 +459,7 @@ class TestListColumnsE2E:
     @pytest.mark.anyio
     async def test_qualified_table(self, client) -> None:
         result = await client.call_tool("list_columns", {"table": "default.test_table"})
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         name_idx = data["columns"].index("name")
         type_idx = data["columns"].index("type")
@@ -470,7 +470,7 @@ class TestListColumnsE2E:
     @pytest.mark.anyio
     async def test_unqualified_table(self, client) -> None:
         result = await client.call_tool("list_columns", {"table": "test_table"})
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         name_idx = data["columns"].index("name")
         names = [row[name_idx] for row in data["rows"]]
@@ -482,7 +482,7 @@ class TestListColumnsE2E:
         result = await client.call_tool(
             "list_columns", {"table": "default.test_table", "profile": "default"}
         )
-        assert not result.isError
+        assert not result.is_error
         data = _parse_text(result)
         assert "name" in data["columns"]
 
@@ -502,7 +502,7 @@ class TestResourcesE2E:
         self, client
     ) -> None:
         result = await client.list_resource_templates()
-        uri_templates = [t.uriTemplate for t in result.resourceTemplates]
+        uri_templates = [t.uri_template for t in result.resource_templates]
         assert "chx://profiles/{profile}/cluster-properties" in uri_templates
         assert "chx://profiles/{profile}/databases" in uri_templates
         tables_tpl = "chx://profiles/{profile}/databases/{database}/tables"
@@ -587,7 +587,7 @@ class TestResourcesE2E:
             "run_query",
             {"sql": "SELECT id, name FROM test_table ORDER BY id", "snapshot": True},
         )
-        assert not tool_result.isError
+        assert not tool_result.is_error
         snap_data = _parse_text(tool_result)
         uri = snap_data["snapshot_uri"]
 
