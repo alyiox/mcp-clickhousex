@@ -2,8 +2,10 @@
 
 <!-- mcp-name: io.github.alyiox/mcp-clickhousex -->
 
-[![Build Status](https://github.com/alyiox/mcp-clickhousex/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alyiox/mcp-clickhousex/actions/workflows/ci.yml)
-[![PyPI Version](https://img.shields.io/pypi/v/mcp-clickhousex.svg)](https://pypi.org/project/mcp-clickhousex/)
+[![CI](https://github.com/alyiox/mcp-walmart-ads/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alyiox/mcp-walmart-ads/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/mcp-walmart-ads.svg)](https://pypi.org/project/mcp-walmart-ads/)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse that supports metadata discovery, resources, parameterized `SELECT` queries, [`SHOW`](https://clickhouse.com/docs/sql-reference/statements/show) introspection, query analysis, and snapshot mode for large result sets, with profile-based configuration and strict no-DML/DDL enforcement.
 
