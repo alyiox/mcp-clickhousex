@@ -10,19 +10,14 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from mcp_clickhousex import metadata, query, snapshots
-from mcp_clickhousex.cluster_properties import (
-    get_cluster_properties as get_cluster_properties_impl,
-)
+from mcp_clickhousex import query, snapshots
 from mcp_clickhousex.config import get_profiles
 from mcp_clickhousex.models import (
-    ClusterProperties,
     ExplainResult,
     Profile,
     QueryResult,
     ShowResult,
     SnapshotResult,
-    TabularResult,
 )
 
 # json_response moved off the constructor in mcp 2.0; it is a
@@ -58,25 +53,6 @@ def list_profiles() -> list[Profile]:
     Each entry includes name and optional description.
     """
     return get_profiles()
-
-
-@mcp.tool(annotations=_READ_ONLY_CLOSED)
-def get_cluster_properties(
-    profile: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Profile name; uses default profile when omitted. Src: profiles."
-            ),
-        ),
-    ] = None,
-) -> ClusterProperties:
-    """[ClickHouse] Get cluster properties and execution limits.
-
-    Returns ClickHouse server version plus enforced limits (max rows,
-    timeouts) for the profile.
-    """
-    return get_cluster_properties_impl(profile)
 
 
 @mcp.tool(annotations=_READ_ONLY_OPEN)
@@ -246,91 +222,18 @@ def analyze_query(
     Returns plan, pipeline, and/or syntax text. Default types plan and
     pipeline. Uses query timeout and optional database; no max-rows cap
     unlike run_query.
+
+    Indexes reports only the key columns the plan used: when it lists no
+    Keys, or Granules unpruned (n/n), it is not authoritative about the
+    table's keys. Read SHOW CREATE TABLE for the relation
+    ReadFromMergeTree names before concluding a key is missing.
     """
     return query.analyze_query(
         sql, parameters=parameters, database=database, profile=profile, types=types
     )
 
 
-@mcp.tool(annotations=_READ_ONLY_CLOSED)
-def list_databases(
-    profile: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Profile name; uses default profile when omitted. Src: profiles."
-            ),
-        ),
-    ] = None,
-) -> TabularResult:
-    """[ClickHouse] List databases.
-
-    Rows from system.databases visible to the connection.
-    """
-    return metadata.list_databases(profile=profile)
-
-
-@mcp.tool(annotations=_READ_ONLY_CLOSED)
-def list_tables(
-    database: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Database to list; client default when omitted. Src: databases."
-            ),
-        ),
-    ] = None,
-    profile: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Profile name; uses default profile when omitted. Src: profiles."
-            ),
-        ),
-    ] = None,
-) -> TabularResult:
-    """[ClickHouse] List tables and views in a database.
-
-    Rows from system.tables: name, engine, primary_key, sorting_key,
-    partition_key, total_rows, total_bytes for query planning.
-    """
-    return metadata.list_tables(database, profile=profile)
-
-
-@mcp.tool(annotations=_READ_ONLY_CLOSED)
-def list_columns(
-    table: Annotated[
-        str,
-        Field(
-            description=("Table or view name, or database.table. Src: tables."),
-        ),
-    ],
-    database: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Database when table is unqualified; ignored if table "
-                "contains a dot. Client default when omitted. Src: databases."
-            ),
-        ),
-    ] = None,
-    profile: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Profile name; uses default profile when omitted. Src: profiles."
-            ),
-        ),
-    ] = None,
-) -> TabularResult:
-    """[ClickHouse] List columns for a table or view.
-
-    Rows from system.columns for the resolved database and table.
-    """
-    return metadata.list_columns(table, database, profile=profile)
-
-
-# -- Resources (profile-first hierarchy: one static + four templates) ---------
+# -- Resources (one static + one template) ------------------------------------
 
 
 @mcp.resource(
@@ -348,84 +251,6 @@ def resource_profiles() -> list[Profile]:
     Each entry includes name and optional description.
     """
     return get_profiles()
-
-
-@mcp.resource(
-    "chx://profiles/{profile}/cluster-properties",
-    name="cluster-properties",
-    description=(
-        "[ClickHouse] Get cluster properties and execution limits. "
-        "Returns ClickHouse server version plus enforced limits (max rows, "
-        "timeouts) for the profile. Src: profiles."
-    ),
-    mime_type="application/json",
-)
-def resource_cluster_properties_for_profile(profile: str) -> ClusterProperties:
-    """[ClickHouse] Get cluster properties and execution limits.
-
-    Returns ClickHouse server version plus enforced limits (max rows,
-    timeouts) for the profile. Src: profiles.
-    """
-    return get_cluster_properties_impl(profile)
-
-
-@mcp.resource(
-    "chx://profiles/{profile}/databases",
-    name="databases",
-    description=(
-        "[ClickHouse] List databases. "
-        "Rows from system.databases visible to the connection. Src: profiles."
-    ),
-    mime_type="application/json",
-)
-def resource_databases_for_profile(profile: str) -> TabularResult:
-    """[ClickHouse] List databases.
-
-    Rows from system.databases visible to the connection. Src: profiles.
-    """
-    return metadata.list_databases(profile=profile)
-
-
-@mcp.resource(
-    "chx://profiles/{profile}/databases/{database}/tables",
-    name="tables",
-    description=(
-        "[ClickHouse] List tables and views in a database. "
-        "Rows from system.tables: name, engine, primary_key, sorting_key, "
-        "partition_key, total_rows, total_bytes for query planning. "
-        "Src: profiles, dbs."
-    ),
-    mime_type="application/json",
-)
-def resource_tables_for_profile_database(profile: str, database: str) -> TabularResult:
-    """[ClickHouse] List tables and views in a database.
-
-    Rows from system.tables: name, engine, primary_key, sorting_key,
-    partition_key, total_rows, total_bytes for query planning.
-    Src: profiles, dbs.
-    """
-    return metadata.list_tables(database, profile=profile)
-
-
-@mcp.resource(
-    "chx://profiles/{profile}/databases/{database}/tables/{table}/columns",
-    name="table-columns",
-    description=(
-        "[ClickHouse] List columns for a table or view. "
-        "Rows from system.columns for the resolved database and table. "
-        "Src: profiles, dbs, tables."
-    ),
-    mime_type="application/json",
-)
-def resource_columns_for_profile_database_table(
-    profile: str, database: str, table: str
-) -> TabularResult:
-    """[ClickHouse] List columns for a table or view.
-
-    Rows from system.columns for the resolved database and table.
-    Src: profiles, dbs, tables.
-    """
-    return metadata.list_columns(table, database, profile=profile)
 
 
 @mcp.resource(

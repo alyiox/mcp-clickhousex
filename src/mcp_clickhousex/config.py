@@ -40,12 +40,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 import clickhouse_connect
 from clickhouse_connect.driver.client import Client
 
-from mcp_clickhousex.models import (
-    ExecutionLimits,
-    OptionDescriptor,
-    Profile,
-    QueryLimits,
-)
+from mcp_clickhousex.models import Profile
 
 DEFAULT_PROFILE_NAME = "default"
 
@@ -328,71 +323,6 @@ def get_client(profile: str | None = None) -> Client:
     _, data = _lookup(profile)
     dsn = data.dsn or _DEFAULT_DSN
     return clickhouse_connect.get_client(**_parse_dsn(dsn))
-
-
-def get_limits(profile: str | None = None) -> ExecutionLimits:
-    """Return execution limits for the given profile."""
-    _, data = _lookup(profile)
-    return ExecutionLimits(
-        query=QueryLimits(
-            max_rows=OptionDescriptor[int](
-                value=data.query_max_rows,
-                description=(
-                    "Row cap applied to every interactive query. "
-                    "Use snapshot=true for larger result sets."
-                ),
-                is_overridable=False,
-                scope="query",
-            ),
-            hard_row_limit=OptionDescriptor[int](
-                value=INTERACTIVE_HARD_ROW_LIMIT,
-                description=(
-                    "Absolute row ceiling for interactive queries; "
-                    "max_rows is clamped to this value."
-                ),
-                is_overridable=False,
-                scope="query",
-            ),
-            command_timeout_seconds=OptionDescriptor[int](
-                value=data.query_command_timeout_seconds,
-                description=(
-                    "Maximum execution time allowed for a query before it is "
-                    "terminated."
-                ),
-                is_overridable=False,
-                scope="query",
-            ),
-        ),
-        snapshot=QueryLimits(
-            max_rows=OptionDescriptor[int](
-                value=data.snapshot_max_rows,
-                description=(
-                    "Row cap applied to snapshot queries (snapshot=true). "
-                    "Result is persisted to disk; fetch via the snapshot URI."
-                ),
-                is_overridable=False,
-                scope="snapshot",
-            ),
-            hard_row_limit=OptionDescriptor[int](
-                value=SNAPSHOT_HARD_ROW_LIMIT,
-                description=(
-                    "Absolute row ceiling for snapshot queries; "
-                    "snapshot_max_rows is clamped to this value."
-                ),
-                is_overridable=False,
-                scope="snapshot",
-            ),
-            command_timeout_seconds=OptionDescriptor[int](
-                value=data.snapshot_command_timeout_seconds,
-                description=(
-                    "Maximum execution time allowed for a snapshot query before it "
-                    "is terminated."
-                ),
-                is_overridable=False,
-                scope="snapshot",
-            ),
-        ),
-    )
 
 
 def get_max_rows(profile: str | None = None) -> int:

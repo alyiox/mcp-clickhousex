@@ -1,11 +1,11 @@
-"""Tests for list_profiles, get_cluster_properties, and config (default profile)."""
+"""Tests for list_profiles and config limit accessors (default profile)."""
 
 import os
 
 from mcp_clickhousex.config import (
     DEFAULT_PROFILE_NAME,
     INTERACTIVE_HARD_ROW_LIMIT,
-    get_limits,
+    get_command_timeout,
     get_max_rows,
     get_profiles,
     reset_registry,
@@ -16,10 +16,6 @@ MCP_PREFIX = "MCP_CLICKHOUSE_"
 
 def _profile_dicts(profiles):
     return [profile.model_dump() for profile in profiles]
-
-
-def _limits_dict(limits):
-    return limits.model_dump()
 
 
 class TestGetProfiles:
@@ -46,17 +42,13 @@ class TestGetProfiles:
         assert profiles[0]["description"] is None
 
 
-class TestGetLimits:
+class TestLimits:
     """Flat env overrides apply to default profile only."""
 
     def test_default_limits(self) -> None:
         with _env_override({}):
-            limits = _limits_dict(get_limits())
-        q = limits["query"]
-        assert q["max_rows"]["value"] == 500
-        assert q["hard_row_limit"]["value"] == INTERACTIVE_HARD_ROW_LIMIT
-        assert q["command_timeout_seconds"]["value"] == 30
-        assert q["max_rows"]["scope"] == "query"
+            assert get_max_rows() == 500
+            assert get_command_timeout() == 30
 
     def test_limits_respect_flat_env(self) -> None:
         with _env_override(
@@ -65,14 +57,12 @@ class TestGetLimits:
                 "MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS": "60",
             }
         ):
-            limits = _limits_dict(get_limits())
-        assert limits["query"]["max_rows"]["value"] == 1000
-        assert limits["query"]["command_timeout_seconds"]["value"] == 60
+            assert get_max_rows() == 1000
+            assert get_command_timeout() == 60
 
     def test_max_rows_clamped_to_hard_limit(self) -> None:
         with _env_override({"MCP_CLICKHOUSE_QUERY_MAX_ROWS": "999999"}):
-            limits = _limits_dict(get_limits())
-        assert limits["query"]["max_rows"]["value"] == INTERACTIVE_HARD_ROW_LIMIT
+            assert get_max_rows() == INTERACTIVE_HARD_ROW_LIMIT
 
 
 class TestGetMaxRows:

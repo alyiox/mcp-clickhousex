@@ -10,11 +10,7 @@ from mcp import Client
 
 from mcp_clickhousex.server import (
     analyze_query,
-    get_cluster_properties,
-    list_columns,
-    list_databases,
     list_profiles,
-    list_tables,
     mcp,
     run_query,
     run_show,
@@ -57,13 +53,9 @@ class TestToolSchemasE2E:
     async def test_tool_descriptions_match_function_docstrings(self, client) -> None:
         pairs = [
             ("list_profiles", list_profiles),
-            ("get_cluster_properties", get_cluster_properties),
             ("run_query", run_query),
             ("run_show", run_show),
             ("analyze_query", analyze_query),
-            ("list_databases", list_databases),
-            ("list_tables", list_tables),
-            ("list_columns", list_columns),
         ]
         result = await client.list_tools()
         by_name = {t.name: t for t in result.tools}
@@ -73,7 +65,7 @@ class TestToolSchemasE2E:
     @pytest.mark.anyio
     async def test_all_tools_annotated_read_only(self, client) -> None:
         result = await client.list_tools()
-        assert len(result.tools) == 8
+        assert len(result.tools) == 4
         for tool in result.tools:
             assert tool.annotations is not None, tool.name
             assert tool.annotations.read_only_hint is True, tool.name
@@ -88,13 +80,9 @@ class TestToolSchemasE2E:
         # url()/s3()/remote() reach hosts beyond the configured profile.
         expected = {
             "list_profiles": False,
-            "get_cluster_properties": False,
             "run_query": True,
             "run_show": False,
             "analyze_query": True,
-            "list_databases": False,
-            "list_tables": False,
-            "list_columns": False,
         }
         result = await client.list_tools()
         actual = {t.name: t.annotations.open_world_hint for t in result.tools}
@@ -168,38 +156,6 @@ class TestToolSchemasE2E:
         assert props["types"]["description"] == (
             "EXPLAIN variants: plan (indexes), pipeline, syntax. "
             "Default plan and pipeline if omitted."
-        )
-
-    @pytest.mark.anyio
-    async def test_list_metadata_tools_schema_descriptions(self, client) -> None:
-        result = await client.list_tools()
-        db_tool = _tool_by_name(result, "list_databases")
-        assert db_tool.input_schema["properties"]["profile"]["description"] == (
-            "Profile name; uses default profile when omitted. Src: profiles."
-        )
-        tables_tool = _tool_by_name(result, "list_tables")
-        tp = tables_tool.input_schema["properties"]
-        assert tp["database"]["description"] == (
-            "Database to list; client default when omitted. Src: databases."
-        )
-        assert tp["profile"]["description"] == (
-            "Profile name; uses default profile when omitted. Src: profiles."
-        )
-        cols_tool = _tool_by_name(result, "list_columns")
-        cp = cols_tool.input_schema["properties"]
-        assert cp["table"]["description"] == (
-            "Table or view name, or database.table. Src: tables."
-        )
-        assert cp["database"]["description"] == (
-            "Database when table is unqualified; ignored if table "
-            "contains a dot. Client default when omitted. Src: databases."
-        )
-        assert cp["profile"]["description"] == (
-            "Profile name; uses default profile when omitted. Src: profiles."
-        )
-        cluster_tool = _tool_by_name(result, "get_cluster_properties")
-        assert cluster_tool.input_schema["properties"]["profile"]["description"] == (
-            "Profile name; uses default profile when omitted. Src: profiles."
         )
 
     @pytest.mark.anyio
@@ -362,52 +318,6 @@ class TestAnalyzeQueryE2E:
         assert result.is_error
 
 
-# -- list_databases ------------------------------------------------------------
-
-
-class TestListDatabasesE2E:
-    @pytest.mark.anyio
-    async def test_returns_databases(self, client) -> None:
-        result = await client.call_tool("list_databases", {})
-        assert not result.is_error
-        data = _parse_text(result)
-        assert "name" in data["columns"]
-        name_idx = data["columns"].index("name")
-        names = [row[name_idx] for row in data["rows"]]
-        assert "system" in names
-        assert "default" in names
-
-    @pytest.mark.anyio
-    async def test_accepts_profile_param(self, client) -> None:
-        result = await client.call_tool("list_databases", {"profile": "default"})
-        assert not result.is_error
-        data = _parse_text(result)
-        assert "name" in data["columns"]
-
-
-# -- list_tables ---------------------------------------------------------------
-
-
-class TestListTablesE2E:
-    @pytest.mark.anyio
-    async def test_lists_test_table(self, client) -> None:
-        result = await client.call_tool("list_tables", {})
-        assert not result.is_error
-        data = _parse_text(result)
-        for col in ("name", "engine", "primary_key", "sorting_key", "partition_key"):
-            assert col in data["columns"], f"missing column {col}"
-        name_idx = data["columns"].index("name")
-        names = [row[name_idx] for row in data["rows"]]
-        assert "test_table" in names
-
-    @pytest.mark.anyio
-    async def test_accepts_profile_param(self, client) -> None:
-        result = await client.call_tool("list_tables", {"profile": "default"})
-        assert not result.is_error
-        data = _parse_text(result)
-        assert "name" in data["columns"]
-
-
 # -- list_profiles ------------------------------------------------------------
 
 
@@ -422,69 +332,6 @@ class TestListProfilesE2E:
         assert "default" in names
         default = next(p for p in profiles if p["name"] == "default")
         assert "description" in default
-
-
-# -- get_cluster_properties -----------------------------------------------------
-
-
-class TestGetClusterPropertiesE2E:
-    @pytest.mark.anyio
-    async def test_returns_version_and_limits(self, client) -> None:
-        result = await client.call_tool("get_cluster_properties", {})
-        assert not result.is_error
-        data = _parse_text(result)
-        assert "version" in data
-        assert "limits" in data
-        assert "query" in data["limits"]
-        q = data["limits"]["query"]
-        assert "max_rows" in q
-        assert "hard_row_limit" in q
-        assert "command_timeout_seconds" in q
-
-    @pytest.mark.anyio
-    async def test_accepts_profile_param(self, client) -> None:
-        result = await client.call_tool(
-            "get_cluster_properties", {"profile": "default"}
-        )
-        assert not result.is_error
-        data = _parse_text(result)
-        assert "version" in data
-        assert "limits" in data
-
-
-# -- list_columns --------------------------------------------------------------
-
-
-class TestListColumnsE2E:
-    @pytest.mark.anyio
-    async def test_qualified_table(self, client) -> None:
-        result = await client.call_tool("list_columns", {"table": "default.test_table"})
-        assert not result.is_error
-        data = _parse_text(result)
-        name_idx = data["columns"].index("name")
-        type_idx = data["columns"].index("type")
-        col_map = {row[name_idx]: row[type_idx] for row in data["rows"]}
-        assert col_map["id"] == "UInt32"
-        assert col_map["name"] == "String"
-
-    @pytest.mark.anyio
-    async def test_unqualified_table(self, client) -> None:
-        result = await client.call_tool("list_columns", {"table": "test_table"})
-        assert not result.is_error
-        data = _parse_text(result)
-        name_idx = data["columns"].index("name")
-        names = [row[name_idx] for row in data["rows"]]
-        assert "id" in names
-        assert "name" in names
-
-    @pytest.mark.anyio
-    async def test_accepts_profile_param(self, client) -> None:
-        result = await client.call_tool(
-            "list_columns", {"table": "default.test_table", "profile": "default"}
-        )
-        assert not result.is_error
-        data = _parse_text(result)
-        assert "name" in data["columns"]
 
 
 # -- Resources (list_resources, read_resource) ---------------------------------
@@ -503,15 +350,7 @@ class TestResourcesE2E:
     ) -> None:
         result = await client.list_resource_templates()
         uri_templates = [t.uri_template for t in result.resource_templates]
-        assert "chx://profiles/{profile}/cluster-properties" in uri_templates
-        assert "chx://profiles/{profile}/databases" in uri_templates
-        tables_tpl = "chx://profiles/{profile}/databases/{database}/tables"
-        assert tables_tpl in uri_templates
-        cols_tpl = (
-            "chx://profiles/{profile}/databases/{database}/tables/{table}/columns"
-        )
-        assert cols_tpl in uri_templates
-        assert "chx://snapshots/{id}" in uri_templates
+        assert uri_templates == ["chx://snapshots/{id}"]
 
     @pytest.mark.anyio
     async def test_read_resource_profiles(self, client) -> None:
@@ -523,62 +362,6 @@ class TestResourcesE2E:
         assert isinstance(data, list)
         assert len(data) >= 1
         assert any(p.get("name") == "default" for p in data)
-
-    @pytest.mark.anyio
-    async def test_read_resource_cluster_properties(self, client) -> None:
-        result = await client.read_resource("chx://profiles/default/cluster-properties")
-        assert result.contents
-        content = result.contents[0]
-        assert hasattr(content, "text")
-        data = json.loads(content.text)
-        assert "version" in data
-        assert "limits" in data
-        assert "query" in data["limits"]
-
-    @pytest.mark.anyio
-    async def test_read_resource_databases(self, client) -> None:
-        result = await client.read_resource("chx://profiles/default/databases")
-        assert result.contents
-        content = result.contents[0]
-        assert hasattr(content, "text")
-        data = json.loads(content.text)
-        assert "columns" in data
-        assert "rows" in data
-        assert "name" in data["columns"]
-        names = [row[data["columns"].index("name")] for row in data["rows"]]
-        assert "default" in names
-        assert "system" in names
-
-    @pytest.mark.anyio
-    async def test_read_resource_tables(self, client) -> None:
-        result = await client.read_resource(
-            "chx://profiles/default/databases/default/tables"
-        )
-        assert result.contents
-        content = result.contents[0]
-        assert hasattr(content, "text")
-        data = json.loads(content.text)
-        assert "columns" in data
-        assert "rows" in data
-        assert "name" in data["columns"]
-        names = [row[data["columns"].index("name")] for row in data["rows"]]
-        assert "test_table" in names
-
-    @pytest.mark.anyio
-    async def test_read_resource_table_columns(self, client) -> None:
-        result = await client.read_resource(
-            "chx://profiles/default/databases/default/tables/test_table/columns"
-        )
-        assert result.contents
-        content = result.contents[0]
-        assert hasattr(content, "text")
-        data = json.loads(content.text)
-        assert "columns" in data
-        assert "rows" in data
-        assert "name" in data["columns"]
-        names = [row[data["columns"].index("name")] for row in data["rows"]]
-        assert "id" in names
-        assert "name" in names
 
     @pytest.mark.anyio
     async def test_read_snapshot_resource(self, client) -> None:

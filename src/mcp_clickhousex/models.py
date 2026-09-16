@@ -23,41 +23,6 @@ class Profile(MCPBase):
     )
 
 
-class OptionDescriptor[T](MCPBase):
-    """Describes an effective server option and how it is enforced."""
-
-    value: T = Field(description="Effective value enforced by the server.")
-    description: str = Field(
-        description="Explanation of what this option controls for users and agents."
-    )
-    is_overridable: bool = Field(
-        description="Whether the client may request an override for this option."
-    )
-    scope: str = Field(description="Logical scope in which this option applies.")
-
-
-class QueryLimits(MCPBase):
-    """Execution limits applied to read-only queries."""
-
-    max_rows: OptionDescriptor[int]
-    hard_row_limit: OptionDescriptor[int]
-    command_timeout_seconds: OptionDescriptor[int]
-
-
-class ExecutionLimits(MCPBase):
-    """Server-enforced execution policies."""
-
-    query: QueryLimits
-    snapshot: QueryLimits
-
-
-class ClusterProperties(MCPBase):
-    """ClickHouse cluster metadata safe to surface to MCP clients."""
-
-    version: str = Field(description="ClickHouse server version string.")
-    limits: ExecutionLimits
-
-
 class TabularResult(MCPBase):
     """Generic tabular result with ordered columns and aligned row values."""
 

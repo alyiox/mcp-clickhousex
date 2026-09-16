@@ -15,7 +15,7 @@ from mcp_clickhousex.config import (
     HARD_COMMAND_TIMEOUT_SECONDS,
     INTERACTIVE_HARD_ROW_LIMIT,
     get_client,
-    get_limits,
+    get_command_timeout,
     get_max_rows,
     get_profiles,
     reset_registry,
@@ -31,10 +31,6 @@ _ALL_FLAT_KEYS = [
 
 def _profile_dicts(profiles):
     return [profile.model_dump() for profile in profiles]
-
-
-def _limits_dict(limits):
-    return limits.model_dump()
 
 
 @contextmanager
@@ -195,10 +191,10 @@ class TestGetClient:
             assert "wh" in str(exc_info.value)
 
 
-# -- get_limits per-profile ----------------------------------------------------
+# -- limit accessors per-profile -----------------------------------------------
 
 
-class TestGetLimitsPerProfile:
+class TestLimitsPerProfile:
     def test_named_profile_limits(self) -> None:
         with _env(
             {
@@ -207,15 +203,13 @@ class TestGetLimitsPerProfile:
                 "MCP_CLICKHOUSE_PROFILES_WH_QUERY_COMMAND_TIMEOUT_SECONDS": "120",
             }
         ):
-            limits = _limits_dict(get_limits("wh"))
-        assert limits["query"]["max_rows"]["value"] == 800
-        assert limits["query"]["command_timeout_seconds"]["value"] == 120
+            assert get_max_rows("wh") == 800
+            assert get_command_timeout("wh") == 120
 
     def test_named_profile_defaults_when_unset(self) -> None:
         with _env({"MCP_CLICKHOUSE_PROFILES_WH_DSN": "http://wh:8123"}):
-            limits = _limits_dict(get_limits("wh"))
-        assert limits["query"]["max_rows"]["value"] == 500
-        assert limits["query"]["command_timeout_seconds"]["value"] == 30
+            assert get_max_rows("wh") == 500
+            assert get_command_timeout("wh") == 30
 
     def test_limits_clamped_to_hard_max(self) -> None:
         with _env(
@@ -225,12 +219,8 @@ class TestGetLimitsPerProfile:
                 "MCP_CLICKHOUSE_PROFILES_WH_QUERY_COMMAND_TIMEOUT_SECONDS": "999999",
             }
         ):
-            limits = _limits_dict(get_limits("wh"))
-        assert limits["query"]["max_rows"]["value"] == INTERACTIVE_HARD_ROW_LIMIT
-        assert (
-            limits["query"]["command_timeout_seconds"]["value"]
-            == HARD_COMMAND_TIMEOUT_SECONDS
-        )
+            assert get_max_rows("wh") == INTERACTIVE_HARD_ROW_LIMIT
+            assert get_command_timeout("wh") == HARD_COMMAND_TIMEOUT_SECONDS
 
 
 # -- get_max_rows per-profile --------------------------------------------------
@@ -282,13 +272,7 @@ class TestMultipleProfilesFeature:
             assert get_max_rows("alpha") == 800
             assert get_max_rows("beta") == 500
 
-            default_limits = _limits_dict(get_limits("default"))
-            assert default_limits["query"]["max_rows"]["value"] == 1000
-            alpha_limits = _limits_dict(get_limits("alpha"))
-            assert alpha_limits["query"]["max_rows"]["value"] == 800
-            assert alpha_limits["query"]["command_timeout_seconds"]["value"] == 60
-            beta_limits = _limits_dict(get_limits("beta"))
-            assert beta_limits["query"]["max_rows"]["value"] == 500
+            assert get_command_timeout("alpha") == 60
 
             with pytest.raises(ValueError, match="unknown") as exc_info:
                 get_client("unknown")
@@ -337,10 +321,8 @@ class TestUserConfigFile:
                 assert by_name["warehouse"]["description"] == "Warehouse from file"
                 assert get_max_rows("default") == 900
                 assert get_max_rows("warehouse") == 700
-                limits_default = _limits_dict(get_limits("default"))
-                assert limits_default["query"]["command_timeout_seconds"]["value"] == 45
-                limits_wh = _limits_dict(get_limits("warehouse"))
-                assert limits_wh["query"]["command_timeout_seconds"]["value"] == 120
+                assert get_command_timeout("default") == 45
+                assert get_command_timeout("warehouse") == 120
 
     def test_file_and_env_env_wins(self, tmp_path: Path) -> None:
         config_path = tmp_path / "mcp-clickhousex" / "config.json"
