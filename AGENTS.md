@@ -97,6 +97,15 @@ Follow existing project conventions.
 
 Normative, high-density metadata: enough for correct tool and parameter selection, minimal to reduce token cost.
 
-* **The tool/parameter description MUST start with [ClickHouse], followed by a Verb-Object fragment**, e.g. `[ClickHouse] Execute read-only SQL`, `[ClickHouse] List databases`, `[ClickHouse] Describe table`.
-* **Use tag-based lineage (Src: <Entity>) for parameters that refer to ClickHouse entities** (e.g. database name → Src: databases, table name → Src: tables).
+* **The tool/parameter description MUST start with [ClickHouse], followed by a Verb-Object fragment**, e.g. `[ClickHouse] Execute read-only SQL`.
+* **Use tag-based lineage (Src: <Entity>) for parameters that refer to ClickHouse entities** (e.g. profile → Src: profiles).
+* **Every tool MUST declare `ToolAnnotations`** — hints, not guarantees, that a host turns into a
+  consent prompt.
+* `read_only_hint=True` claims the tool changes nothing anywhere: writing a local file is a change.
+* `destructive_hint` and `idempotent_hint` matter only when `read_only_hint=False` — set both there,
+  omit both otherwise. Both are positive claims: `destructive_hint=False` promises additive-only
+  writes, `idempotent_hint=True` promises a repeat call with the same arguments has no further
+  effect.
+* `open_world_hint` tracks the domain of interaction, not the I/O — `False` only when that domain is
+  fixed at build time (bundled data, local config).
 
