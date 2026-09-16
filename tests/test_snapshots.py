@@ -144,3 +144,77 @@ class TestLoadExisting:
         """Store initialization should not raise when the snapshot dir is absent."""
         snap_module.reset_store()
         assert fetch("00000000") is None  # triggers _load_existing; no error
+
+
+class TestSnapshotIdIsNotAPath:
+    """An id is a lookup key; it must never steer the lookup out of the store."""
+
+    @pytest.mark.parametrize(
+        "bad_id",
+        [
+            "../outside",
+            "../../outside",
+            "sub/nested",
+            "/etc/passwd",
+            "..%2Foutside",
+            "a" * 8 + "/../x",
+            "ABCDEF12",
+            "abcdef1",
+            "abcdef123",
+            "abcdefg1",
+            ".",
+            "..",
+        ],
+        ids=[
+            "parent",
+            "grandparent",
+            "nested",
+            "absolute",
+            "percent_encoded",
+            "valid_prefix_then_escape",
+            "uppercase_hex",
+            "too_short",
+            "too_long",
+            "non_hex",
+            "dot",
+            "dotdot",
+        ],
+    )
+    def test_malformed_id_refused(self, bad_id: str) -> None:
+        assert fetch(bad_id) is None
+
+    def test_traversal_cannot_read_a_planted_file(self, _isolated_snapshot_dir) -> None:
+        planted = _isolated_snapshot_dir.parent / "planted.csv"
+        _isolated_snapshot_dir.mkdir(parents=True, exist_ok=True)
+        planted.write_text("secret,data\r\nhunter2,leaked\r\n", encoding="utf-8")
+
+        assert fetch("../planted") is None
+        assert fetch(str(planted)[: -len(".csv")]) is None
+        assert planted.exists(), "traversal probe must not delete the target"
+
+    def test_minted_ids_are_accepted(self) -> None:
+        snapshot_id = save(["a"], [[1]])
+        assert snap_module._is_valid_id(snapshot_id)
+        assert fetch(snapshot_id) is not None
+
+    def test_foreign_csv_in_store_is_left_alone(self, _isolated_snapshot_dir) -> None:
+        _isolated_snapshot_dir.mkdir(parents=True, exist_ok=True)
+        foreign = _isolated_snapshot_dir / "notes.csv"
+        foreign.write_text("keep,me\r\n", encoding="utf-8")
+
+        snap_module.reset_store()
+        assert fetch("notes") is None
+        assert foreign.exists(), "a file this store did not write must not be deleted"
+
+
+class TestTtlDescription:
+    """The advertised retention must be derived from the TTL, not restated."""
+
+    def test_matches_the_constant(self) -> None:
+        assert snap_module.TTL_DESCRIPTION == f"{_SNAPSHOT_TTL.days} days"
+
+    def test_tool_and_resource_metadata_use_it(self) -> None:
+        from mcp_clickhousex.models import SnapshotResult
+
+        described = SnapshotResult.model_fields["snapshot_uri"].description or ""
+        assert snap_module.TTL_DESCRIPTION in described

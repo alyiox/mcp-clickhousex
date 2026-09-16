@@ -97,7 +97,7 @@ def run_query(
                 "resource URI (chx://snapshots/{id}) instead of inline data. "
                 "Use for queries that may exceed the interactive row limit (1 000). "
                 "Snapshot limits apply (default 10 000 rows, hard ceiling 50 000). "
-                "Entries expire after 7 days."
+                f"Entries expire after {snapshots.TTL_DESCRIPTION}."
             ),
         ),
     ] = False,
@@ -257,17 +257,21 @@ def resource_profiles() -> list[Profile]:
     description=(
         "[ClickHouse] Fetch a query result snapshot by ID. "
         "Returns the full result as a CSV string (header row + data rows). "
-        "Entries expire after 7 days. Src: run_query with snapshot=true."
+        f"Entries expire after {snapshots.TTL_DESCRIPTION}. "
+        "Src: run_query with snapshot=true."
     ),
     mime_type="text/csv",
 )
 def resource_snapshot(id: str) -> str:
     """[ClickHouse] Fetch a query result snapshot by ID.
 
-    Returns the full result as a CSV string. Entries expire after 7 days.
-    Src: run_query with snapshot=true.
+    Returns the full result as a CSV string. Entries expire after the
+    configured TTL. Src: run_query with snapshot=true.
     """
     csv_data = snapshots.fetch(id)
     if csv_data is None:
-        raise ValueError(f"Snapshot '{id}' not found or has expired (TTL: 7 days).")
+        raise ValueError(
+            f"Snapshot '{id}' not found or has expired "
+            f"(TTL: {snapshots.TTL_DESCRIPTION})."
+        )
     return csv_data

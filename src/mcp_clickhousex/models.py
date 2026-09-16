@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
+from mcp_clickhousex.snapshots import TTL_DESCRIPTION
+
 
 class MCPBase(BaseModel):
     """Base model for server-facing MCP payloads."""
@@ -69,7 +71,8 @@ class SnapshotResult(MCPBase):
         description=(
             "MCP resource URI for the snapshot CSV "
             "(e.g. ``chx://snapshots/{id}``). "
-            "Fetch it via the snapshot resource. Entries expire after 7 days."
+            f"Fetch it via the snapshot resource. Entries expire after "
+            f"{TTL_DESCRIPTION}."
         )
     )
     row_count: int = Field(description="Number of data rows in the snapshot.")

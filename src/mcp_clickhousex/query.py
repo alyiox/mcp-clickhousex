@@ -57,7 +57,7 @@ def run_query(
 
     When *snapshot* is ``True``, persists the full result as a CSV file and
     returns ``{snapshot_uri, row_count}``.  Snapshot limits apply (default
-    10 000, hard ceiling 50 000).  Entries expire after 7 days.
+    10 000, hard ceiling 50 000).  Entries expire after the snapshot TTL.
     """
     validate_read_only(sql)
 

@@ -2,7 +2,7 @@
 
 Snapshots are stored as RFC 4180 CSV files under
 ``~/.cache/mcp-clickhousex/snapshots/``.  Each file is named by an 8-char
-hex ID and expires 7 days after creation (mtime, UTC).  The in-memory store
+hex ID and expires after the TTL below (mtime, UTC).  The in-memory store
 is populated lazily on first access; expired entries are evicted at that
 point only — in-memory entries are served directly without re-checking expiry.
 """
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -20,6 +21,21 @@ from typing import Any
 _SNAPSHOT_TTL = timedelta(days=7)
 _SNAPSHOT_DIR = Path.home() / ".cache" / "mcp-clickhousex" / "snapshots"
 _FILE_EXTENSION = ".csv"
+
+# Single source for the retention wording in tool and resource metadata, so
+# moving the TTL cannot leave a description claiming the old one.
+TTL_DESCRIPTION = f"{_SNAPSHOT_TTL.days} days"
+
+# A snapshot ID is a lookup key, never a path fragment. Ids are minted by
+# save() as uuid4().hex[:8]; anything else is refused before it can reach the
+# filesystem, where "../x" or an absolute path would escape the store.
+_ID_RE = re.compile(r"\A[0-9a-f]{8}\Z")
+
+
+def _is_valid_id(snapshot_id: str) -> bool:
+    """Return True if *snapshot_id* has the shape :func:`save` mints."""
+    return bool(_ID_RE.match(snapshot_id))
+
 
 # id -> csv_text; populated lazily; entries live for the process lifetime.
 _memory_store: dict[str, str] | None = None
@@ -70,6 +86,10 @@ def _load_existing() -> dict[str, str]:
         snapshot_id = _try_get_id(path)
         if not snapshot_id:
             _try_delete(path)
+            continue
+
+        if not _is_valid_id(snapshot_id):
+            # Not a file this store wrote; leave it where it is.
             continue
 
         try:
@@ -139,10 +159,13 @@ def save(columns: list[str], rows: list[list[Any]]) -> str:
 def fetch(snapshot_id: str) -> str | None:
     """Return the CSV text for *snapshot_id*, or ``None`` if not found.
 
+    Ids that are not the shape :func:`save` mints are refused outright, so a
+    caller cannot steer the lookup outside the snapshot directory.
+
     In-memory entries are returned directly without re-checking expiry.
     Expiry is enforced only when the store is first loaded from disk.
     """
-    if not snapshot_id:
+    if not snapshot_id or not _is_valid_id(snapshot_id):
         return None
 
     store = _get_store()
