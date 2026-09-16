@@ -185,6 +185,28 @@ class TestToolSchemasE2E:
         assert analyze_props["pipeline"]["anyOf"][0]["type"] == "string"
         assert analyze_props["syntax"]["anyOf"][0]["type"] == "string"
 
+    @pytest.mark.anyio
+    async def test_every_tool_returns_structured_content(self, client) -> None:
+        # structured_output=True is a declared contract, so check each tool
+        # honours it on the wire and not only in its advertised schema.
+        calls = {
+            "list_profiles": {},
+            "run_query": {"sql": "SELECT 1 AS n"},
+            "run_show": {"sql": "SHOW DATABASES"},
+            "analyze_query": {"sql": "SELECT 1 AS n"},
+        }
+        tools = await client.list_tools()
+        assert {t.name for t in tools.tools} == set(calls)
+        for tool in tools.tools:
+            assert tool.output_schema is not None, tool.name
+
+        for name, arguments in calls.items():
+            # call_tool validates structured_content against the advertised
+            # schema and raises when it is missing or fails to validate.
+            result = await client.call_tool(name, arguments)
+            assert not result.is_error, name
+            assert result.structured_content is not None, name
+
 
 # -- run_query -----------------------------------------------------------------
 

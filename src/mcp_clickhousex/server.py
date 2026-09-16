@@ -33,6 +33,11 @@ mcp = MCPServer("mcp-clickhousex")
 # table functions (url, s3, remote, mysql), so even free-form SQL reaches only
 # the ClickHouse endpoints named by the configured profiles — a domain fixed
 # by config, not by the SQL an agent supplies.
+#
+# structured_output is explicit on every tool too. The SDK already derives an
+# output schema from the return annotation, but declaring it turns a return
+# type it cannot model into an InvalidSignature at import time instead of a
+# silent drop back to text-only content.
 _READ_ONLY_CLOSED = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 
 
@@ -44,7 +49,7 @@ def main() -> None:
     mcp.run(transport="stdio")
 
 
-@mcp.tool(annotations=_READ_ONLY_CLOSED)
+@mcp.tool(annotations=_READ_ONLY_CLOSED, structured_output=True)
 def list_profiles() -> list[Profile]:
     """[ClickHouse] List configured profiles.
 
@@ -53,7 +58,7 @@ def list_profiles() -> list[Profile]:
     return get_profiles()
 
 
-@mcp.tool(annotations=_READ_ONLY_CLOSED)
+@mcp.tool(annotations=_READ_ONLY_CLOSED, structured_output=True)
 def run_query(
     sql: Annotated[
         str,
@@ -122,7 +127,7 @@ def run_query(
     )
 
 
-@mcp.tool(annotations=_READ_ONLY_CLOSED)
+@mcp.tool(annotations=_READ_ONLY_CLOSED, structured_output=True)
 def run_show(
     sql: Annotated[
         str,
@@ -169,7 +174,7 @@ def run_show(
     )
 
 
-@mcp.tool(annotations=_READ_ONLY_CLOSED)
+@mcp.tool(annotations=_READ_ONLY_CLOSED, structured_output=True)
 def analyze_query(
     sql: Annotated[
         str,
