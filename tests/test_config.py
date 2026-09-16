@@ -401,6 +401,14 @@ class TestSpecialCharCredentials:
                 get_client()
                 return mock_cc.get_client.call_args[1]
 
+    def test_read_only_setting_applied(self) -> None:
+        kwargs = self._get_client_kwargs("http://user:pass@host:8123/db")
+        assert kwargs["settings"]["readonly"] == 1
+
+    def test_read_only_setting_not_weakened_by_dsn(self) -> None:
+        kwargs = self._get_client_kwargs("http://user:pass@host:8123/db?readonly=2")
+        assert kwargs["settings"]["readonly"] == 1
+
     def test_hash_in_password(self) -> None:
         kwargs = self._get_client_kwargs("http://user:p%23ss@host:8123/db")
         assert kwargs["password"] == "p#ss"

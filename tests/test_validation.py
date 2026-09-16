@@ -20,6 +20,11 @@ class TestValidateReadOnly:
             "with cte as (select 1) select * from cte",
             "SELECT 1;",
             "SELECT 1 ;  ",
+            "SELECT * FROM t WHERE name = 'a;b'",
+            "SELECT splitByChar(';', payload) FROM t",
+            "SELECT * FROM t WHERE note = 'trailing;'",
+            'SELECT "col;name" FROM t',
+            "SELECT `col;name` FROM t",
         ],
         ids=[
             "simple",
@@ -29,6 +34,11 @@ class TestValidateReadOnly:
             "cte_lowercase",
             "trailing_semicolon",
             "trailing_semicolon_space",
+            "semicolon_in_literal",
+            "semicolon_as_literal_arg",
+            "literal_ending_in_semicolon",
+            "semicolon_in_quoted_identifier",
+            "semicolon_in_backtick_identifier",
         ],
     )
     def test_valid_queries_pass(self, sql: str) -> None:
@@ -110,8 +120,15 @@ class TestValidateShowStatement:
             "  show tables from system  ",
             "SHOW CREATE TABLE system.one",
             "SHOW DATABASES;",
+            "SHOW TABLES LIKE 'a;b'",
         ],
-        ids=["databases", "tables_from_system", "create_table", "trailing_semicolon"],
+        ids=[
+            "databases",
+            "tables_from_system",
+            "create_table",
+            "trailing_semicolon",
+            "semicolon_in_literal",
+        ],
     )
     def test_valid_show_passes(self, sql: str) -> None:
         validate_show_statement(sql)

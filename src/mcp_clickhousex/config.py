@@ -44,6 +44,13 @@ from mcp_clickhousex.models import Profile
 
 DEFAULT_PROFILE_NAME = "default"
 
+# ClickHouse's own read-only mode, applied to every client this module hands
+# out. readonly=1 refuses writes, the external table functions (url, s3,
+# remote, mysql) and query-level SETTINGS -- so the caps query.py sends cannot
+# be raised by the SQL an agent supplies. readonly=2 permits settings changes
+# and would make those caps advisory, so it is deliberately not used.
+READ_ONLY_SETTINGS: dict[str, Any] = {"readonly": 1}
+
 INTERACTIVE_HARD_ROW_LIMIT = 1_000
 SNAPSHOT_HARD_ROW_LIMIT = 50_000
 HARD_COMMAND_TIMEOUT_SECONDS = 300
@@ -322,7 +329,10 @@ def get_client(profile: str | None = None) -> Client:
     """
     _, data = _lookup(profile)
     dsn = data.dsn or _DEFAULT_DSN
-    return clickhouse_connect.get_client(**_parse_dsn(dsn))
+    kwargs = _parse_dsn(dsn)
+    # Set last so a DSN query parameter cannot weaken the read-only posture.
+    kwargs["settings"] = READ_ONLY_SETTINGS
+    return clickhouse_connect.get_client(**kwargs)
 
 
 def get_max_rows(profile: str | None = None) -> int:

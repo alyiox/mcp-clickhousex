@@ -24,18 +24,16 @@ from mcp_clickhousex.models import (
 # run_streamable_http_async() option now and never applied to this stdio server.
 mcp = MCPServer("mcp-clickhousex")
 
-# Tool hints. Every tool here is read-only: validation rejects DML, DDL, SET,
-# SYSTEM and friends, so none mutates ClickHouse state. destructive_hint and
-# idempotent_hint stay unset throughout — both are meaningful only when
-# read_only_hint is false.
+# Tool hints. Every tool here is read-only: get_client applies ClickHouse's
+# readonly=1, which refuses writes outright, so none mutates ClickHouse state.
+# destructive_hint and idempotent_hint stay unset throughout — both are
+# meaningful only when read_only_hint is false.
 #
-# open_world_hint splits the tools in two. Introspection and SHOW reach only the
-# ClickHouse endpoints named by the configured profiles, a closed domain. The
-# free-form SQL tools do not: validate_read_only screens statement keywords, not
-# table functions, so url(), s3(), remote() and mysql() can pull from arbitrary
-# external hosts.
+# open_world_hint is false for all of them. readonly=1 also refuses the external
+# table functions (url, s3, remote, mysql), so even free-form SQL reaches only
+# the ClickHouse endpoints named by the configured profiles — a domain fixed
+# by config, not by the SQL an agent supplies.
 _READ_ONLY_CLOSED = ToolAnnotations(read_only_hint=True, open_world_hint=False)
-_READ_ONLY_OPEN = ToolAnnotations(read_only_hint=True, open_world_hint=True)
 
 
 def main() -> None:
@@ -55,7 +53,7 @@ def list_profiles() -> list[Profile]:
     return get_profiles()
 
 
-@mcp.tool(annotations=_READ_ONLY_OPEN)
+@mcp.tool(annotations=_READ_ONLY_CLOSED)
 def run_query(
     sql: Annotated[
         str,
@@ -171,7 +169,7 @@ def run_show(
     )
 
 
-@mcp.tool(annotations=_READ_ONLY_OPEN)
+@mcp.tool(annotations=_READ_ONLY_CLOSED)
 def analyze_query(
     sql: Annotated[
         str,

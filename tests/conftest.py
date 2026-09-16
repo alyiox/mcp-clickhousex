@@ -7,9 +7,10 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import clickhouse_connect
 import pytest
 
-from mcp_clickhousex.config import get_client
+from mcp_clickhousex.config import _parse_dsn
 
 _TEST_DSN_KEY = "MCP_TEST_CLICKHOUSE_DSN"
 _DEFAULT_DSN = "http://admin:password123@localhost:8123/default"
@@ -28,8 +29,12 @@ def _no_user_config_file():
 
 @pytest.fixture(scope="session")
 def ch_client():
-    """Return a raw clickhouse_connect client for test setup/teardown."""
-    return get_client()
+    """Return a raw clickhouse_connect client for test setup/teardown.
+
+    Built straight from the DSN rather than via ``get_client``, which applies
+    ``readonly=1`` and would refuse the CREATE and INSERT below.
+    """
+    return clickhouse_connect.get_client(**_parse_dsn(os.environ["MCP_CLICKHOUSE_DSN"]))
 
 
 @pytest.fixture(scope="session", autouse=True)

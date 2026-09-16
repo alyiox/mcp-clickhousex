@@ -75,14 +75,13 @@ class TestToolSchemasE2E:
 
     @pytest.mark.anyio
     async def test_open_world_hint_marks_free_form_sql_tools(self, client) -> None:
-        # run_query and analyze_query accept arbitrary SELECT, and
-        # validate_read_only screens statement keywords, not table functions —
-        # url()/s3()/remote() reach hosts beyond the configured profile.
+        # readonly=1 refuses the external table functions, so even the
+        # free-form SQL tools reach only the configured profiles' endpoints.
         expected = {
             "list_profiles": False,
-            "run_query": True,
+            "run_query": False,
             "run_show": False,
-            "analyze_query": True,
+            "analyze_query": False,
         }
         result = await client.list_tools()
         actual = {t.name: t.annotations.open_world_hint for t in result.tools}
@@ -381,3 +380,48 @@ class TestResourcesE2E:
         rows = list(reader)
         assert rows[0] == ["id", "name"]
         assert len(rows) == 4  # 1 header + 3 data rows
+
+
+# -- readonly=1 enforcement ----------------------------------------------------
+
+
+class TestReadOnlyEnforcementE2E:
+    """ClickHouse's own readonly=1 backs the validator, per profile client."""
+
+    @pytest.mark.anyio
+    async def test_settings_clause_cannot_raise_row_cap(self, client) -> None:
+        result = await client.call_tool(
+            "run_query",
+            {"sql": "SELECT number FROM numbers(5000) SETTINGS max_result_rows=100000"},
+        )
+        assert result.is_error
+
+    @pytest.mark.anyio
+    async def test_settings_clause_cannot_raise_timeout(self, client) -> None:
+        result = await client.call_tool(
+            "run_query",
+            {"sql": "SELECT sleep(3) SETTINGS max_execution_time=600"},
+        )
+        assert result.is_error
+
+    @pytest.mark.anyio
+    async def test_external_table_function_refused(self, client) -> None:
+        result = await client.call_tool(
+            "run_query",
+            {"sql": "SELECT * FROM url('http://127.0.0.1:8123/ping', LineAsString)"},
+        )
+        assert result.is_error
+
+    @pytest.mark.anyio
+    async def test_into_outfile_refused(self, client) -> None:
+        result = await client.call_tool(
+            "run_query", {"sql": "SELECT 1 INTO OUTFILE 'out.csv'"}
+        )
+        assert result.is_error
+
+    @pytest.mark.anyio
+    async def test_semicolon_inside_literal_accepted(self, client) -> None:
+        result = await client.call_tool(
+            "run_query", {"sql": "SELECT splitByChar(';', 'a;b') AS parts"}
+        )
+        assert not result.is_error

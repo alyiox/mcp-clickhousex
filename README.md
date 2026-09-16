@@ -122,7 +122,15 @@ Resource descriptions match `description=…` on `@mcp.resource` in `server.py` 
 
 ## Security
 
-Read-only SQL only: `run_query` allows `SELECT` / `WITH … SELECT`; `run_show` allows a single `SHOW` statement per call. `INTO OUTFILE` is not allowed on `run_show`. Interactive queries enforce a tight row cap (default 500, hard ceiling 1 000); for larger extracts use `snapshot=true` (default 10 000, hard ceiling 50 000). Parameterized queries are supported where the driver allows (`%(name)s` or `{name:Type}` syntax). Use environment variables for connection credentials — never commit secrets.
+Every client this server opens carries ClickHouse's own **`readonly=1`**, so the engine — not just the server's SQL checks — refuses:
+
+- writes of any kind (`INSERT`, DDL, `ALTER … UPDATE`, `SYSTEM`, `GRANT`);
+- the external table functions `url()`, `s3()`, `remote()`, `mysql()` and friends, so a query cannot reach a host outside the configured profile;
+- query-level `SETTINGS`, so the row and time caps below cannot be raised by the SQL an agent supplies, and `INTO OUTFILE` is refused.
+
+`readonly=2` is deliberately not used: it permits `SETTINGS` changes, which would make those caps advisory. The tradeoff is that benign per-query tuning (`SETTINGS max_threads = …`) is refused too.
+
+On top of that, `run_query` accepts `SELECT` / `WITH … SELECT` and `run_show` a single `SHOW` statement per call, one statement each. Interactive queries enforce a tight row cap (default 500, hard ceiling 1 000); for larger extracts use `snapshot=true` (default 10 000, hard ceiling 50 000). Parameterized queries are supported where the driver allows (`%(name)s` or `{name:Type}` syntax). Use environment variables for connection credentials — never commit secrets.
 
 ## MCP host examples
 
