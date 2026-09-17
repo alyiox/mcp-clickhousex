@@ -79,6 +79,30 @@ class TestValidateShowStatement:
     def test_valid_show_passes(self, sql: str) -> None:
         validate_show_statement(sql)
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SHOW DATABASES LIKE '%def%'",
+            "SHOW DATABASES ILIKE '%DEF%'",
+            "SHOW DATABASES NOT LIKE '%sys%'",
+            "SHOW TABLES FROM system LIKE '%repl%'",
+            "SHOW COLUMNS FROM tables FROM system LIKE '%name%'",
+            "SHOW TABLES NOT LIKE '%a%' LIMIT 3",
+        ],
+        ids=[
+            "like",
+            "ilike",
+            "not_like",
+            "from_like",
+            "columns_like",
+            "not_like_limit",
+        ],
+    )
+    def test_filtered_show_passes(self, sql: str) -> None:
+        # Narrowing a listing is how an agent stays under the row cap, so the
+        # validator must not tighten into rejecting the LIKE forms.
+        validate_show_statement(sql)
+
     @pytest.mark.parametrize("sql", ["", "   "])
     def test_empty_rejected(self, sql: str) -> None:
         with pytest.raises(ValueError, match="empty"):

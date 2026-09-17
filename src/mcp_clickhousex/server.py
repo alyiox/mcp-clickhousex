@@ -114,8 +114,9 @@ def run_show(
         str,
         Field(
             description=(
-                "One SHOW statement (e.g. SHOW DATABASES, SHOW CREATE TABLE). "
-                "No INTO OUTFILE."
+                "One SHOW statement (e.g. SHOW TABLES FROM db LIKE '%x%', "
+                "SHOW CREATE TABLE). Filter with LIKE/ILIKE to stay under the "
+                "row cap. No INTO OUTFILE."
             ),
         ),
     ],
