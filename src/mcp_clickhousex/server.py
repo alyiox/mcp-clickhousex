@@ -47,7 +47,7 @@ _DATABASE = Annotated[
     str | None,
     Field(
         description=(
-            "Session default database for unqualified names. Src: SHOW DATABASES."
+            "Session default database for unqualified names. Src: system.databases."
         ),
     ),
 ]
