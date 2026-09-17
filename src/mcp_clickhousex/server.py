@@ -152,8 +152,8 @@ def analyze_query(
 ) -> ExplainResult:
     """[ClickHouse] Explain read-only SELECT or WITH … SELECT.
 
-    Indexes names only the keys the plan used; confirm absent keys with
-    SHOW CREATE TABLE.
+    Indexes names only the keys the plan used; confirm absent keys from
+    system.tables (primary_key, sorting_key, partition_key).
     """
     return query.analyze_query(
         sql, parameters=parameters, database=database, profile=profile, types=types

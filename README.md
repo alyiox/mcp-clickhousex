@@ -104,7 +104,7 @@ Tool descriptions match `server.py` tool docstrings except the `[ClickHouse]` pr
 
 Catalog discovery has no dedicated tool. Reach it through `run_show` — `SHOW DATABASES`, `SHOW TABLES`, `SHOW COLUMNS FROM t`, and `SHOW CREATE TABLE t` for a relation's engine, keys and partitioning — or through `run_query` over `system.databases`, `system.tables` and `system.columns`, which is also the only route to table sizes (`total_rows`, `total_bytes`). `SELECT version()` returns the server version.
 
-When reading an `analyze_query` plan, prefer `SHOW CREATE TABLE` over the plan's own `Indexes` section for a table's keys: the plan lists only the key columns the query used, so a query that skips the leading key column reports a shorter key than the table actually has.
+When reading an `analyze_query` plan, do not treat its `Indexes` section as authoritative about a table's keys: the plan lists only the key columns the query used, so a query that skips the leading key column reports a shorter key than the table actually has. Confirm against `system.tables` — `SELECT primary_key, sorting_key, partition_key FROM system.tables WHERE database = … AND name = …` answers that in a few dozen tokens, where `SHOW CREATE TABLE` spends several hundred on full DDL to say the same thing. Reach for the DDL when you need codecs, TTLs or the whole column list, not to check a key.
 
 The row caps that apply to a call arrive with its result as `truncated` and `row_limit`, and the ceilings are stated under [Security](#security).
 
