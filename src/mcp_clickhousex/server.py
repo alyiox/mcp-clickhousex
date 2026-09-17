@@ -78,7 +78,7 @@ def run_query(
         str,
         Field(
             description=(
-                "Read-only SELECT or WITH … SELECT. One statement; qualify names "
+                "Read-only SELECT, CTEs allowed. One statement; qualify names "
                 "as db.table or set database. Catalog metadata: "
                 "system.databases, system.tables, system.columns."
             ),
@@ -99,7 +99,7 @@ def run_query(
         ),
     ] = False,
 ) -> QueryResult | SnapshotResult:
-    """[ClickHouse] Execute read-only SELECT or WITH … SELECT."""
+    """[ClickHouse] Execute read-only SELECT."""
     return query.run_query(
         sql,
         parameters=parameters,
@@ -136,7 +136,7 @@ def analyze_query(
     sql: Annotated[
         str,
         Field(
-            description="Read-only SELECT or WITH … SELECT to EXPLAIN. One statement.",
+            description="Read-only SELECT, CTEs allowed, to EXPLAIN. One statement.",
         ),
     ],
     parameters: _SQL_PARAMETERS = None,
@@ -152,7 +152,7 @@ def analyze_query(
         ),
     ] = None,
 ) -> ExplainResult:
-    """[ClickHouse] Explain read-only SELECT or WITH … SELECT.
+    """[ClickHouse] Explain read-only SELECT.
 
     Indexes names only the keys the plan used; confirm absent keys from
     system.tables (primary_key, sorting_key, partition_key).
