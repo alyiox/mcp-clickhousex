@@ -20,25 +20,42 @@ from mcp_clickhousex.models import (
     SnapshotResult,
 )
 
-# json_response moved off the constructor in mcp 2.0; it is a
-# run_streamable_http_async() option now and never applied to this stdio server.
 mcp = MCPServer("mcp-clickhousex")
 
-# Tool hints. Every tool here is read-only: get_client applies ClickHouse's
-# readonly=1, which refuses writes outright, so none mutates ClickHouse state.
-# destructive_hint and idempotent_hint stay unset throughout — both are
-# meaningful only when read_only_hint is false.
+# Every tool here is read-only: get_client applies ClickHouse's readonly=1,
+# which refuses writes outright. destructive_hint and idempotent_hint stay
+# unset -- both are meaningful only when read_only_hint is false.
 #
-# open_world_hint is false for all of them. readonly=1 also refuses the external
-# table functions (url, s3, remote, mysql), so even free-form SQL reaches only
-# the ClickHouse endpoints named by the configured profiles — a domain fixed
-# by config, not by the SQL an agent supplies.
+# open_world_hint is false because readonly=1 also refuses the external table
+# functions (url, s3, remote, mysql), so even free-form SQL reaches only the
+# endpoints named by the configured profiles -- a domain fixed by config.
 #
-# structured_output is explicit on every tool too. The SDK already derives an
-# output schema from the return annotation, but declaring it turns a return
-# type it cannot model into an InvalidSignature at import time instead of a
-# silent drop back to text-only content.
+# structured_output is explicit so a return type the SDK cannot model raises
+# InvalidSignature at import time instead of silently dropping back to text.
 _READ_ONLY_CLOSED = ToolAnnotations(read_only_hint=True, open_world_hint=False)
+
+_SQL_PARAMETERS = Annotated[
+    dict[str, Any] | None,
+    Field(
+        description=(
+            "Named parameters for driver placeholders (e.g. %(name)s or {name:Type})."
+        ),
+    ),
+]
+
+_DATABASE = Annotated[
+    str | None,
+    Field(
+        description=(
+            "Session default database for unqualified names. Src: SHOW DATABASES."
+        ),
+    ),
+]
+
+_PROFILE = Annotated[
+    str | None,
+    Field(description="Profile name; default profile when omitted. Src: profiles."),
+]
 
 
 def main() -> None:
@@ -51,10 +68,7 @@ def main() -> None:
 
 @mcp.tool(annotations=_READ_ONLY_CLOSED, structured_output=True)
 def list_profiles() -> list[Profile]:
-    """[ClickHouse] List configured profiles.
-
-    Each entry includes name and optional description.
-    """
+    """[ClickHouse] List configured connection profiles."""
     return get_profiles()
 
 
@@ -64,60 +78,27 @@ def run_query(
         str,
         Field(
             description=(
-                "Read-only SELECT or WITH … SELECT. One statement; use qualified "
-                "db.table or database. Driver placeholder syntax for parameters."
+                "Read-only SELECT or WITH … SELECT. One statement; qualify names "
+                "as db.table or set database."
             ),
         ),
     ],
-    parameters: Annotated[
-        dict[str, Any] | None,
-        Field(
-            description=(
-                "Named parameters for driver placeholders "
-                "(e.g. %(name)s or {name:Type})."
-            ),
-        ),
-    ] = None,
-    database: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Session default database for unqualified names. Src: databases."
-            ),
-        ),
-    ] = None,
-    profile: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Profile name; uses default profile when omitted. Src: profiles."
-            ),
-        ),
-    ] = None,
+    parameters: _SQL_PARAMETERS = None,
+    database: _DATABASE = None,
+    profile: _PROFILE = None,
     snapshot: Annotated[
         bool,
         Field(
             description=(
-                "When true, persist the full result as a CSV file and return a "
-                "resource URI (chx://snapshots/{id}) instead of inline data. "
-                "Use for queries that may exceed the interactive row limit (1 000). "
-                "Snapshot limits apply (default 10 000 rows, hard ceiling 50 000). "
-                f"Entries expire after {snapshots.TTL_DESCRIPTION}."
+                "Persist the full result to a CSV resource (chx://snapshots/{id}) "
+                "instead of returning rows inline. Use when the result may exceed "
+                "the interactive cap of 1 000 rows; raises the cap to 10 000 "
+                f"(ceiling 50 000). Expires after {snapshots.TTL_DESCRIPTION}."
             ),
         ),
     ] = False,
 ) -> QueryResult | SnapshotResult:
-    """[ClickHouse] Execute read-only SELECT or WITH … SELECT.
-
-    One statement; DML, DDL, SET, SYSTEM, and similar are rejected.
-    Max-rows cap; overflow sets truncated and row_limit. Same SQL
-    validation as analyze_query.
-
-    Returns ``{data, row_count}`` where ``data`` is an RFC 4180 CSV string.
-    Pass ``snapshot=true`` to persist the result to disk and receive a
-    ``{snapshot_uri, row_count}`` instead; fetch the CSV via the snapshot
-    resource URI.
-    """
+    """[ClickHouse] Execute read-only SELECT or WITH … SELECT."""
     return query.run_query(
         sql,
         parameters=parameters,
@@ -133,42 +114,16 @@ def run_show(
         str,
         Field(
             description=(
-                "Single SHOW statement (e.g. SHOW DATABASES, SHOW CREATE TABLE). "
+                "One SHOW statement (e.g. SHOW DATABASES, SHOW CREATE TABLE). "
                 "No INTO OUTFILE."
             ),
         ),
     ],
-    parameters: Annotated[
-        dict[str, Any] | None,
-        Field(
-            description=(
-                "Named parameters for driver placeholders "
-                "(e.g. %(name)s or {name:Type})."
-            ),
-        ),
-    ] = None,
-    database: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Session default database for unqualified names. Src: databases."
-            ),
-        ),
-    ] = None,
-    profile: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Profile name; uses default profile when omitted. Src: profiles."
-            ),
-        ),
-    ] = None,
+    parameters: _SQL_PARAMETERS = None,
+    database: _DATABASE = None,
+    profile: _PROFILE = None,
 ) -> ShowResult:
-    """[ClickHouse] Execute SHOW introspection statement.
-
-    One statement per call; INTO OUTFILE rejected. Interactive row limits
-    apply (default 500, hard ceiling 1 000). Same timeout as run_query.
-    """
+    """[ClickHouse] Execute SHOW introspection statement."""
     return query.run_show(
         sql, parameters=parameters, database=database, profile=profile
     )
@@ -179,57 +134,26 @@ def analyze_query(
     sql: Annotated[
         str,
         Field(
-            description=(
-                "Read-only SELECT or WITH … SELECT for EXPLAIN. One statement; "
-                "same validation as run_query."
-            ),
+            description="Read-only SELECT or WITH … SELECT to EXPLAIN. One statement.",
         ),
     ],
-    parameters: Annotated[
-        dict[str, Any] | None,
-        Field(
-            description=(
-                "Named parameters for driver placeholders "
-                "(e.g. %(name)s or {name:Type})."
-            ),
-        ),
-    ] = None,
-    database: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Session default database for unqualified names. Src: databases."
-            ),
-        ),
-    ] = None,
-    profile: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Profile name; uses default profile when omitted. Src: profiles."
-            ),
-        ),
-    ] = None,
+    parameters: _SQL_PARAMETERS = None,
+    database: _DATABASE = None,
+    profile: _PROFILE = None,
     types: Annotated[
         list[Literal["plan", "pipeline", "syntax"]] | None,
         Field(
             description=(
                 "EXPLAIN variants: plan (indexes), pipeline, syntax. "
-                "Default plan and pipeline if omitted."
+                "Default plan and pipeline."
             ),
         ),
     ] = None,
 ) -> ExplainResult:
     """[ClickHouse] Explain read-only SELECT or WITH … SELECT.
 
-    Returns plan, pipeline, and/or syntax text. Default types plan and
-    pipeline. Uses query timeout and optional database; no max-rows cap
-    unlike run_query.
-
-    Indexes reports only the key columns the plan used: when it lists no
-    Keys, or Granules unpruned (n/n), it is not authoritative about the
-    table's keys. Read SHOW CREATE TABLE for the relation
-    ReadFromMergeTree names before concluding a key is missing.
+    Indexes names only the keys the plan used; confirm absent keys with
+    SHOW CREATE TABLE.
     """
     return query.analyze_query(
         sql, parameters=parameters, database=database, profile=profile, types=types
@@ -242,37 +166,26 @@ def analyze_query(
 @mcp.resource(
     "chx://profiles",
     name="profiles",
-    description=(
-        "[ClickHouse] List configured profiles. "
-        "Each entry includes name and optional description."
-    ),
+    description="[ClickHouse] List configured connection profiles.",
     mime_type="application/json",
 )
 def resource_profiles() -> list[Profile]:
-    """[ClickHouse] List configured profiles.
-
-    Each entry includes name and optional description.
-    """
     return get_profiles()
 
 
+# TTL is interpolated from the one constant, so moving it cannot leave a
+# description advertising the old retention.
 @mcp.resource(
     "chx://snapshots/{id}",
     name="snapshot",
     description=(
-        "[ClickHouse] Fetch a query result snapshot by ID. "
-        "Returns the full result as a CSV string (header row + data rows). "
-        f"Entries expire after {snapshots.TTL_DESCRIPTION}. "
+        "[ClickHouse] Fetch a query result snapshot as CSV. "
+        f"Expires after {snapshots.TTL_DESCRIPTION}. "
         "Src: run_query with snapshot=true."
     ),
     mime_type="text/csv",
 )
 def resource_snapshot(id: str) -> str:
-    """[ClickHouse] Fetch a query result snapshot by ID.
-
-    Returns the full result as a CSV string. Entries expire after the
-    configured TTL. Src: run_query with snapshot=true.
-    """
     csv_data = snapshots.fetch(id)
     if csv_data is None:
         raise ValueError(

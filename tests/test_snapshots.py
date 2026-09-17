@@ -44,11 +44,6 @@ class TestSave:
         assert len(sid) == 8
         assert all(c in "0123456789abcdef" for c in sid)
 
-    def test_creates_csv_file(self, _isolated_snapshot_dir) -> None:
-        sid = save(["x", "y"], [[1, 2], [3, 4]])
-        path = _isolated_snapshot_dir / f"{sid}.csv"
-        assert path.is_file()
-
     def test_csv_content(self, _isolated_snapshot_dir) -> None:
         sid = save(["id", "name"], [[1, "alice"], [2, "bob"]])
         path = _isolated_snapshot_dir / f"{sid}.csv"
@@ -60,10 +55,6 @@ class TestSave:
         assert not _isolated_snapshot_dir.exists()
         save(["n"], [[42]])
         assert _isolated_snapshot_dir.is_dir()
-
-    def test_adds_entry_to_memory_store(self) -> None:
-        sid = save(["n"], [[1]])
-        assert fetch(sid) is not None
 
 
 class TestFetch:
@@ -81,20 +72,13 @@ class TestFetch:
     def test_empty_id_returns_none(self) -> None:
         assert fetch("") is None
 
-    def test_expired_returns_none_on_reload(self, _isolated_snapshot_dir) -> None:
+    def test_expired_entry_is_refused_and_deleted(self, _isolated_snapshot_dir) -> None:
         """Expiry is enforced when the store is reloaded, not on every fetch."""
         sid = save(["n"], [[1]])
         path = _isolated_snapshot_dir / f"{sid}.csv"
         _backdate(path, _SNAPSHOT_TTL + timedelta(seconds=1))
         snap_module.reset_store()
         assert fetch(sid) is None
-
-    def test_expired_file_deleted_on_reload(self, _isolated_snapshot_dir) -> None:
-        sid = save(["n"], [[1]])
-        path = _isolated_snapshot_dir / f"{sid}.csv"
-        _backdate(path, _SNAPSHOT_TTL + timedelta(seconds=1))
-        snap_module.reset_store()
-        fetch(sid)
         assert not path.exists()
 
     def test_fresh_file_not_deleted(self, _isolated_snapshot_dir) -> None:
@@ -111,15 +95,6 @@ class TestFetch:
         assert data is not None
         _, rows = _parse_csv(data)
         assert rows == [["99"]]
-
-    def test_cache_miss_expired_returns_none(self, _isolated_snapshot_dir) -> None:
-        """A cache-miss path still enforces expiry before loading into memory."""
-        sid = save(["n"], [[1]])
-        path = _isolated_snapshot_dir / f"{sid}.csv"
-        _backdate(path, _SNAPSHOT_TTL + timedelta(seconds=1))
-        snap_module.reset_store()
-        assert fetch(sid) is None
-        assert not path.exists()
 
 
 class TestLoadExisting:

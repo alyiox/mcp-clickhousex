@@ -37,9 +37,13 @@ def ch_client():
     return clickhouse_connect.get_client(**_parse_dsn(os.environ["MCP_CLICKHOUSE_DSN"]))
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _bootstrap_test_db(ch_client):
-    """Create a sample table in the default database; drop after session."""
+@pytest.fixture(scope="session")
+def bootstrap_test_db(ch_client):
+    """Create a sample table in the default database; drop after session.
+
+    Opt-in rather than autouse, so the modules that only exercise validation,
+    config parsing and the snapshot store run without a live ClickHouse.
+    """
     ch_client.command(
         "CREATE TABLE IF NOT EXISTS test_table "
         "(id UInt32, name String) ENGINE = MergeTree() ORDER BY id"

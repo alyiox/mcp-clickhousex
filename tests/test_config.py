@@ -152,6 +152,20 @@ class TestMergeRules:
         assert wh["description"] == "wh desc"
 
 
+class TestDescription:
+    def test_whitespace_trimmed(self) -> None:
+        with _env({"MCP_CLICKHOUSE_DESCRIPTION": " Main cluster "}):
+            profiles = _profile_dicts(get_profiles())
+        assert profiles[0]["description"] == "Main cluster"
+
+    def test_blank_is_dropped_from_the_payload(self) -> None:
+        # MCPBase strips unset optionals, so a profile without a description
+        # carries no description key rather than an explicit null.
+        with _env({"MCP_CLICKHOUSE_DESCRIPTION": "  "}):
+            profiles = _profile_dicts(get_profiles())
+        assert "description" not in profiles[0]
+
+
 # -- Profile name rules --------------------------------------------------------
 
 
@@ -221,64 +235,6 @@ class TestLimitsPerProfile:
         ):
             assert get_max_rows("wh") == INTERACTIVE_HARD_ROW_LIMIT
             assert get_command_timeout("wh") == HARD_COMMAND_TIMEOUT_SECONDS
-
-
-# -- get_max_rows per-profile --------------------------------------------------
-
-
-class TestGetMaxRowsPerProfile:
-    def test_named_profile(self) -> None:
-        with _env(
-            {
-                "MCP_CLICKHOUSE_PROFILES_WH_DSN": "http://wh:8123",
-                "MCP_CLICKHOUSE_PROFILES_WH_QUERY_MAX_ROWS": "800",
-            }
-        ):
-            assert get_max_rows("wh") == 800
-
-
-# -- Multiple profiles (profile-based feature) ---------------------------------
-
-
-class TestMultipleProfilesFeature:
-    """Verify multiple named profiles: discovery, per-profile limits, and lookup."""
-
-    def test_multiple_profiles_discovery_limits_and_lookup(self) -> None:
-        with _env(
-            {
-                "MCP_CLICKHOUSE_DSN": "http://default-host:8123",
-                "MCP_CLICKHOUSE_DESCRIPTION": "Primary cluster",
-                "MCP_CLICKHOUSE_QUERY_MAX_ROWS": "1000",
-                "MCP_CLICKHOUSE_PROFILES_ALPHA_DSN": "http://alpha:8123",
-                "MCP_CLICKHOUSE_PROFILES_ALPHA_DESCRIPTION": "Alpha cluster",
-                "MCP_CLICKHOUSE_PROFILES_ALPHA_QUERY_MAX_ROWS": "800",
-                "MCP_CLICKHOUSE_PROFILES_ALPHA_QUERY_COMMAND_TIMEOUT_SECONDS": "60",
-                "MCP_CLICKHOUSE_PROFILES_BETA_DSN": "http://beta:8123",
-                "MCP_CLICKHOUSE_PROFILES_BETA_DESCRIPTION": "Beta cluster",
-                "MCP_CLICKHOUSE_PROFILES_BETA_QUERY_MAX_ROWS": "500",
-            }
-        ):
-            profiles = _profile_dicts(get_profiles())
-            names = sorted(p["name"] for p in profiles)
-            assert names == ["alpha", "beta", "default"]
-
-            by_name = {p["name"]: p for p in profiles}
-            assert by_name["default"]["description"] == "Primary cluster"
-            assert by_name["alpha"]["description"] == "Alpha cluster"
-            assert by_name["beta"]["description"] == "Beta cluster"
-
-            assert get_max_rows(None) == 1000
-            assert get_max_rows("default") == 1000
-            assert get_max_rows("alpha") == 800
-            assert get_max_rows("beta") == 500
-
-            assert get_command_timeout("alpha") == 60
-
-            with pytest.raises(ValueError, match="unknown") as exc_info:
-                get_client("unknown")
-            assert "alpha" in str(exc_info.value)
-            assert "beta" in str(exc_info.value)
-            assert "default" in str(exc_info.value)
 
 
 # -- User-level config file ----------------------------------------------------

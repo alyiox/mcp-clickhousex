@@ -1,20 +1,17 @@
 """End-to-end tests: exercise the MCP tools through in-memory transport."""
 
 import csv
-import inspect
 import io
 import json
 
 import pytest
 from mcp import Client
 
-from mcp_clickhousex.server import (
-    analyze_query,
-    list_profiles,
-    mcp,
-    run_query,
-    run_show,
-)
+from mcp_clickhousex.server import mcp
+
+pytestmark = pytest.mark.usefixtures("bootstrap_test_db")
+
+TOOL_NAMES = {"list_profiles", "run_query", "run_show", "analyze_query"}
 
 
 @pytest.fixture()
@@ -30,160 +27,62 @@ def _parse_text(result) -> dict:
 
 def _parse_query_csv(data: dict) -> tuple[list[str], list[list[str]]]:
     """Parse the CSV string from a run_query result dict."""
-    reader = csv.reader(io.StringIO(data["data"]))
-    rows = list(reader)
+    rows = list(csv.reader(io.StringIO(data["data"])))
     return rows[0], rows[1:]
 
 
-def _tool_by_name(tools_result, name: str):
-    return next(tool for tool in tools_result.tools if tool.name == name)
+# -- MCP metadata --------------------------------------------------------------
+#
+# These assert the rules in AGENTS.md rather than the current wording, so
+# rewording a description does not fail the suite but dropping metadata does.
 
 
-def _tool_description_matches_doc(fn, tool_description: str | None) -> bool:
-    """MCP may append a trailing newline; normalize against inspect.getdoc."""
-    doc = inspect.getdoc(fn) or ""
-    return (tool_description or "").strip() == doc.strip()
-
-
-# -- tool schemas --------------------------------------------------------------
-
-
-class TestToolSchemasE2E:
+class TestToolMetadata:
     @pytest.mark.anyio
-    async def test_tool_descriptions_match_function_docstrings(self, client) -> None:
-        pairs = [
-            ("list_profiles", list_profiles),
-            ("run_query", run_query),
-            ("run_show", run_show),
-            ("analyze_query", analyze_query),
-        ]
+    async def test_exactly_the_documented_tools(self, client) -> None:
         result = await client.list_tools()
-        by_name = {t.name: t for t in result.tools}
-        for name, fn in pairs:
-            assert _tool_description_matches_doc(fn, by_name[name].description), name
+        assert {t.name for t in result.tools} == TOOL_NAMES
 
     @pytest.mark.anyio
-    async def test_all_tools_annotated_read_only(self, client) -> None:
-        result = await client.list_tools()
-        assert len(result.tools) == 4
-        for tool in result.tools:
-            assert tool.annotations is not None, tool.name
-            assert tool.annotations.read_only_hint is True, tool.name
+    async def test_descriptions_are_normative(self, client) -> None:
+        for tool in (await client.list_tools()).tools:
+            assert tool.description, tool.name
+            assert tool.description.startswith("[ClickHouse] "), tool.name
+
+    @pytest.mark.anyio
+    async def test_every_parameter_is_described(self, client) -> None:
+        for tool in (await client.list_tools()).tools:
+            for name, prop in tool.input_schema["properties"].items():
+                assert prop.get("description"), f"{tool.name}.{name}"
+
+    @pytest.mark.anyio
+    async def test_annotations_claim_read_only_and_closed_world(self, client) -> None:
+        for tool in (await client.list_tools()).tools:
+            annotations = tool.annotations
+            assert annotations is not None, tool.name
+            assert annotations.read_only_hint is True, tool.name
+            # readonly=1 also refuses url/s3/remote/mysql, so even free-form
+            # SQL reaches only the configured profiles' endpoints.
+            assert annotations.open_world_hint is False, tool.name
             # Meaningful only when read_only_hint is false; must stay unset.
-            assert tool.annotations.destructive_hint is None, tool.name
-            assert tool.annotations.idempotent_hint is None, tool.name
-
-    @pytest.mark.anyio
-    async def test_open_world_hint_marks_free_form_sql_tools(self, client) -> None:
-        # readonly=1 refuses the external table functions, so even the
-        # free-form SQL tools reach only the configured profiles' endpoints.
-        expected = {
-            "list_profiles": False,
-            "run_query": False,
-            "run_show": False,
-            "analyze_query": False,
-        }
-        result = await client.list_tools()
-        actual = {t.name: t.annotations.open_world_hint for t in result.tools}
-        assert actual == expected
-
-    @pytest.mark.anyio
-    async def test_run_query_schema_includes_parameter_descriptions(
-        self, client
-    ) -> None:
-        result = await client.list_tools()
-        tool = _tool_by_name(result, "run_query")
-        assert _tool_description_matches_doc(run_query, tool.description)
-        props = tool.input_schema["properties"]
-        assert props["sql"]["description"] == (
-            "Read-only SELECT or WITH … SELECT. One statement; use qualified "
-            "db.table or database. Driver placeholder syntax for parameters."
-        )
-        assert props["parameters"]["description"] == (
-            "Named parameters for driver placeholders (e.g. %(name)s or {name:Type})."
-        )
-        assert props["database"]["description"] == (
-            "Session default database for unqualified names. Src: databases."
-        )
-        assert props["profile"]["description"] == (
-            "Profile name; uses default profile when omitted. Src: profiles."
-        )
-
-    @pytest.mark.anyio
-    async def test_run_show_schema_includes_parameter_descriptions(
-        self, client
-    ) -> None:
-        result = await client.list_tools()
-        tool = _tool_by_name(result, "run_show")
-        assert _tool_description_matches_doc(run_show, tool.description)
-        props = tool.input_schema["properties"]
-        assert props["sql"]["description"] == (
-            "Single SHOW statement (e.g. SHOW DATABASES, SHOW CREATE TABLE). "
-            "No INTO OUTFILE."
-        )
-        assert props["parameters"]["description"] == (
-            "Named parameters for driver placeholders (e.g. %(name)s or {name:Type})."
-        )
-        assert props["database"]["description"] == (
-            "Session default database for unqualified names. Src: databases."
-        )
-        assert props["profile"]["description"] == (
-            "Profile name; uses default profile when omitted. Src: profiles."
-        )
-
-    @pytest.mark.anyio
-    async def test_analyze_query_schema_includes_parameter_descriptions(
-        self, client
-    ) -> None:
-        result = await client.list_tools()
-        tool = _tool_by_name(result, "analyze_query")
-        assert _tool_description_matches_doc(analyze_query, tool.description)
-        props = tool.input_schema["properties"]
-        assert props["sql"]["description"] == (
-            "Read-only SELECT or WITH … SELECT for EXPLAIN. One statement; "
-            "same validation as run_query."
-        )
-        assert props["parameters"]["description"] == (
-            "Named parameters for driver placeholders (e.g. %(name)s or {name:Type})."
-        )
-        assert props["database"]["description"] == (
-            "Session default database for unqualified names. Src: databases."
-        )
-        assert props["profile"]["description"] == (
-            "Profile name; uses default profile when omitted. Src: profiles."
-        )
-        assert props["types"]["description"] == (
-            "EXPLAIN variants: plan (indexes), pipeline, syntax. "
-            "Default plan and pipeline if omitted."
-        )
+            assert annotations.destructive_hint is None, tool.name
+            assert annotations.idempotent_hint is None, tool.name
 
     @pytest.mark.anyio
     async def test_output_schemas_match_typed_models(self, client) -> None:
-        result = await client.list_tools()
+        by_name = {t.name: t for t in (await client.list_tools()).tools}
 
         # run_query returns QueryResult | SnapshotResult (anyOf union via $defs)
-        run_query_tool = _tool_by_name(result, "run_query")
-        schema = run_query_tool.output_schema
-        defs = schema.get("$defs", {})
-        assert "QueryResult" in defs
-        assert "SnapshotResult" in defs
+        defs = by_name["run_query"].output_schema["$defs"]
         assert "data" in defs["QueryResult"]["properties"]
-        assert "row_count" in defs["QueryResult"]["properties"]
         assert "snapshot_uri" in defs["SnapshotResult"]["properties"]
-        assert "row_count" in defs["SnapshotResult"]["properties"]
 
-        run_show_tool = _tool_by_name(result, "run_show")
-        show_props = run_show_tool.output_schema["properties"]
+        show_props = by_name["run_show"].output_schema["properties"]
         assert show_props["columns"]["type"] == "array"
         assert show_props["rows"]["type"] == "array"
-        assert show_props["truncated"]["anyOf"][0]["type"] == "boolean"
-        assert show_props["row_limit"]["anyOf"][0]["type"] == "integer"
 
-        analyze_tool = _tool_by_name(result, "analyze_query")
-        analyze_props = analyze_tool.output_schema["properties"]
-        assert analyze_props["plan"]["anyOf"][0]["type"] == "string"
-        assert analyze_props["pipeline"]["anyOf"][0]["type"] == "string"
-        assert analyze_props["syntax"]["anyOf"][0]["type"] == "string"
+        analyze_props = by_name["analyze_query"].output_schema["properties"]
+        assert set(analyze_props) == {"plan", "pipeline", "syntax"}
 
     @pytest.mark.anyio
     async def test_every_tool_returns_structured_content(self, client) -> None:
@@ -195,9 +94,7 @@ class TestToolSchemasE2E:
             "run_show": {"sql": "SHOW DATABASES"},
             "analyze_query": {"sql": "SELECT 1 AS n"},
         }
-        tools = await client.list_tools()
-        assert {t.name for t in tools.tools} == set(calls)
-        for tool in tools.tools:
+        for tool in (await client.list_tools()).tools:
             assert tool.output_schema is not None, tool.name
 
         for name, arguments in calls.items():
@@ -213,28 +110,15 @@ class TestToolSchemasE2E:
 
 class TestRunQueryE2E:
     @pytest.mark.anyio
-    async def test_simple_select(self, client) -> None:
-        result = await client.call_tool("run_query", {"sql": "SELECT 1 AS n"})
-        assert not result.is_error
-        data = _parse_text(result)
-        assert "data" in data
-        assert data["row_count"] == 1
-        headers, rows = _parse_query_csv(data)
-        assert headers == ["n"]
-        assert rows == [["1"]]
-
-    @pytest.mark.anyio
-    async def test_table_query(self, client) -> None:
+    async def test_select_over_the_wire(self, client) -> None:
         result = await client.call_tool(
-            "run_query",
-            {"sql": "SELECT id, name FROM test_table ORDER BY id"},
+            "run_query", {"sql": "SELECT id, name FROM test_table ORDER BY id"}
         )
         assert not result.is_error
         data = _parse_text(result)
         assert data["row_count"] == 3
         headers, rows = _parse_query_csv(data)
         assert headers == ["id", "name"]
-        assert len(rows) == 3
         assert rows[0] == ["1", "alice"]
 
     @pytest.mark.anyio
@@ -247,8 +131,7 @@ class TestRunQueryE2E:
             },
         )
         assert not result.is_error
-        data = _parse_text(result)
-        _, rows = _parse_query_csv(data)
+        _, rows = _parse_query_csv(_parse_text(result))
         assert rows == [["bob"]]
 
     @pytest.mark.anyio
@@ -259,25 +142,18 @@ class TestRunQueryE2E:
         )
         assert not result.is_error
         data = _parse_text(result)
-        assert "snapshot_uri" in data
         assert data["snapshot_uri"].startswith("chx://snapshots/")
         assert data["row_count"] == 3
 
     @pytest.mark.anyio
-    async def test_rejects_insert(self, client) -> None:
+    async def test_validation_error_surfaces_as_tool_error(self, client) -> None:
         result = await client.call_tool(
-            "run_query",
-            {"sql": "INSERT INTO test_table VALUES (99, 'bad')"},
+            "run_query", {"sql": "INSERT INTO test_table VALUES (99, 'bad')"}
         )
         assert result.is_error
 
-    @pytest.mark.anyio
-    async def test_rejects_empty(self, client) -> None:
-        result = await client.call_tool("run_query", {"sql": ""})
-        assert result.is_error
 
-
-# -- run_show ------------------------------------------------------------------
+# -- run_show / analyze_query --------------------------------------------------
 
 
 class TestRunShowE2E:
@@ -286,7 +162,6 @@ class TestRunShowE2E:
         result = await client.call_tool("run_show", {"sql": "SHOW DATABASES"})
         assert not result.is_error
         data = _parse_text(result)
-        assert "name" in data["columns"]
         names = [row[data["columns"].index("name")] for row in data["rows"]]
         assert "default" in names
 
@@ -296,20 +171,7 @@ class TestRunShowE2E:
         assert result.is_error
 
 
-# -- analyze_query -------------------------------------------------------------
-
-
 class TestAnalyzeQueryE2E:
-    @pytest.mark.anyio
-    async def test_default_types(self, client) -> None:
-        result = await client.call_tool("analyze_query", {"sql": "SELECT 1 AS n"})
-        assert not result.is_error
-        data = _parse_text(result)
-        assert "plan" in data
-        assert "pipeline" in data
-        assert isinstance(data["plan"], str)
-        assert isinstance(data["pipeline"], str)
-
     @pytest.mark.anyio
     async def test_explicit_types(self, client) -> None:
         result = await client.call_tool(
@@ -318,28 +180,18 @@ class TestAnalyzeQueryE2E:
         )
         assert not result.is_error
         data = _parse_text(result)
-        assert "syntax" in data
-        assert "plan" not in data
+        assert set(data) == {"syntax"}
         assert "SELECT" in data["syntax"]
-
-    @pytest.mark.anyio
-    async def test_rejects_insert(self, client) -> None:
-        result = await client.call_tool(
-            "analyze_query",
-            {"sql": "INSERT INTO test_table VALUES (99, 'bad')"},
-        )
-        assert result.is_error
 
     @pytest.mark.anyio
     async def test_rejects_invalid_type(self, client) -> None:
         result = await client.call_tool(
-            "analyze_query",
-            {"sql": "SELECT 1", "types": ["bogus"]},
+            "analyze_query", {"sql": "SELECT 1", "types": ["bogus"]}
         )
         assert result.is_error
 
 
-# -- list_profiles ------------------------------------------------------------
+# -- list_profiles -------------------------------------------------------------
 
 
 class TestListProfilesE2E:
@@ -348,40 +200,34 @@ class TestListProfilesE2E:
         result = await client.call_tool("list_profiles", {})
         assert not result.is_error
         profiles = [json.loads(c.text) for c in result.content]
-        assert len(profiles) >= 1
-        names = [p["name"] for p in profiles]
-        assert "default" in names
-        default = next(p for p in profiles if p["name"] == "default")
-        assert "description" in default
+        assert "default" in [p["name"] for p in profiles]
 
 
-# -- Resources (list_resources, read_resource) ---------------------------------
+# -- Resources -----------------------------------------------------------------
 
 
 class TestResourcesE2E:
     @pytest.mark.anyio
-    async def test_list_resources_includes_clickhouse_uris(self, client) -> None:
-        result = await client.list_resources()
-        uris = [str(r.uri) for r in result.resources]
-        assert "chx://profiles" in uris
+    async def test_resources_are_described_normatively(self, client) -> None:
+        listed = await client.list_resources()
+        templates = (await client.list_resource_templates()).resource_templates
+        assert [str(r.uri) for r in listed.resources] == ["chx://profiles"]
+        assert [t.uri_template for t in templates] == ["chx://snapshots/{id}"]
+        for entry in [*listed.resources, *templates]:
+            assert entry.description, entry.name
+            assert entry.description.startswith("[ClickHouse] "), entry.name
 
     @pytest.mark.anyio
-    async def test_list_resource_templates_includes_profile_first_uris(
-        self, client
-    ) -> None:
-        result = await client.list_resource_templates()
-        uri_templates = [t.uri_template for t in result.resource_templates]
-        assert uri_templates == ["chx://snapshots/{id}"]
+    async def test_snapshot_description_carries_the_live_ttl(self, client) -> None:
+        from mcp_clickhousex import snapshots
+
+        templates = (await client.list_resource_templates()).resource_templates
+        assert snapshots.TTL_DESCRIPTION in templates[0].description
 
     @pytest.mark.anyio
     async def test_read_resource_profiles(self, client) -> None:
         result = await client.read_resource("chx://profiles")
-        assert result.contents
-        content = result.contents[0]
-        assert hasattr(content, "text")
-        data = json.loads(content.text)
-        assert isinstance(data, list)
-        assert len(data) >= 1
+        data = json.loads(result.contents[0].text)
         assert any(p.get("name") == "default" for p in data)
 
     @pytest.mark.anyio
@@ -392,14 +238,10 @@ class TestResourcesE2E:
             {"sql": "SELECT id, name FROM test_table ORDER BY id", "snapshot": True},
         )
         assert not tool_result.is_error
-        snap_data = _parse_text(tool_result)
-        uri = snap_data["snapshot_uri"]
+        uri = _parse_text(tool_result)["snapshot_uri"]
 
         resource_result = await client.read_resource(uri)
-        assert resource_result.contents
-        csv_text = resource_result.contents[0].text
-        reader = csv.reader(io.StringIO(csv_text))
-        rows = list(reader)
+        rows = list(csv.reader(io.StringIO(resource_result.contents[0].text)))
         assert rows[0] == ["id", "name"]
         assert len(rows) == 4  # 1 header + 3 data rows
 
@@ -411,34 +253,27 @@ class TestReadOnlyEnforcementE2E:
     """ClickHouse's own readonly=1 backs the validator, per profile client."""
 
     @pytest.mark.anyio
-    async def test_settings_clause_cannot_raise_row_cap(self, client) -> None:
-        result = await client.call_tool(
-            "run_query",
-            {"sql": "SELECT number FROM numbers(5000) SETTINGS max_result_rows=100000"},
-        )
-        assert result.is_error
-
-    @pytest.mark.anyio
-    async def test_settings_clause_cannot_raise_timeout(self, client) -> None:
-        result = await client.call_tool(
-            "run_query",
-            {"sql": "SELECT sleep(3) SETTINGS max_execution_time=600"},
-        )
-        assert result.is_error
-
-    @pytest.mark.anyio
-    async def test_external_table_function_refused(self, client) -> None:
-        result = await client.call_tool(
-            "run_query",
-            {"sql": "SELECT * FROM url('http://127.0.0.1:8123/ping', LineAsString)"},
-        )
-        assert result.is_error
-
-    @pytest.mark.anyio
-    async def test_into_outfile_refused(self, client) -> None:
-        result = await client.call_tool(
-            "run_query", {"sql": "SELECT 1 INTO OUTFILE 'out.csv'"}
-        )
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT number FROM numbers(5000) SETTINGS max_result_rows=100000",
+            "SELECT sleep(3) SETTINGS max_execution_time=600",
+            "SELECT * FROM url('http://127.0.0.1:8123/ping', LineAsString)",
+            "SELECT 1 INTO OUTFILE 'out.csv'",
+            # The validator admits this (it opens with WITH); readonly=1 is
+            # what actually refuses it.
+            "WITH c AS (SELECT 1) INSERT INTO test_table VALUES (99, 'bad')",
+        ],
+        ids=[
+            "raise_row_cap",
+            "raise_timeout",
+            "url_function",
+            "outfile",
+            "with_insert",
+        ],
+    )
+    async def test_refused(self, client, sql: str) -> None:
+        result = await client.call_tool("run_query", {"sql": sql})
         assert result.is_error
 
     @pytest.mark.anyio

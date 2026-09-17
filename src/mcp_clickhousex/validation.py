@@ -2,16 +2,7 @@
 
 import re
 
-_COMMAND_RE = re.compile(
-    r"(^\s*)(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE|"
-    r"GRANT|REVOKE|ATTACH|DETACH|RENAME|OPTIMIZE|SET|KILL|SYSTEM)\s",
-    re.IGNORECASE,
-)
-
-_SELECT_OR_CTE_RE = re.compile(
-    r"^\s*(SELECT|WITH)\s",
-    re.IGNORECASE,
-)
+_SELECT_OR_CTE_RE = re.compile(r"^\s*(SELECT|WITH)\s", re.IGNORECASE)
 
 _SHOW_RE = re.compile(r"^\s*SHOW\s", re.IGNORECASE)
 
@@ -32,44 +23,33 @@ def _blank_quoted(sql: str) -> str:
     return _QUOTED_RE.sub(lambda m: " " * len(m.group(0)), sql)
 
 
+def _single_statement(sql: str) -> str:
+    """Return *sql* stripped of trailing ';', or raise if empty/multi-statement."""
+    if not sql or not sql.strip():
+        raise ValueError("SQL query cannot be empty.")
+
+    stripped = sql.strip().rstrip(";").strip()
+    if ";" in _blank_quoted(stripped):
+        raise ValueError("Multiple SQL statements are not allowed.")
+    return stripped
+
+
 def validate_read_only(sql: str) -> None:
     """Ensure *sql* is a single, read-only SELECT (or WITH … SELECT).
 
-    Raises ``ValueError`` when the query is empty, contains multiple
-    statements, or is not a read-only SELECT.
+    Anything not opening with SELECT or WITH is refused here; ClickHouse's
+    readonly=1 is what actually refuses writes on the wire, including the
+    ``WITH … INSERT`` form this prefix check admits.
     """
-    if not sql or not sql.strip():
-        raise ValueError("SQL query cannot be empty.")
-
-    stripped = sql.strip().rstrip(";").strip()
-
-    if ";" in _blank_quoted(stripped):
-        raise ValueError("Multiple SQL statements are not allowed.")
-
-    if not _SELECT_OR_CTE_RE.search(stripped):
+    if not _SELECT_OR_CTE_RE.search(_single_statement(sql)):
         raise ValueError("Only read-only SELECT queries are allowed.")
-
-    if _COMMAND_RE.search(stripped):
-        raise ValueError("The query contains forbidden SQL operations.")
 
 
 def validate_show_statement(sql: str) -> None:
-    """Ensure *sql* is a single SHOW statement without INTO OUTFILE.
+    """Ensure *sql* is a single SHOW statement without INTO OUTFILE."""
+    stripped = _single_statement(sql)
 
-    Raises ``ValueError`` when the query is empty, contains multiple
-    statements, is not a SHOW statement, or requests server-side export.
-    """
-    if not sql or not sql.strip():
-        raise ValueError("SQL query cannot be empty.")
-
-    stripped = sql.strip().rstrip(";").strip()
-
-    unquoted = _blank_quoted(stripped)
-
-    if ";" in unquoted:
-        raise ValueError("Multiple SQL statements are not allowed.")
-
-    if _INTO_OUTFILE_RE.search(unquoted):
+    if _INTO_OUTFILE_RE.search(_blank_quoted(stripped)):
         raise ValueError("INTO OUTFILE is not allowed.")
 
     if not _SHOW_RE.search(stripped):

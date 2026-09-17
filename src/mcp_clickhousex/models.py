@@ -10,9 +10,32 @@ from mcp_clickhousex.snapshots import TTL_DESCRIPTION
 
 
 class MCPBase(BaseModel):
-    """Base model for server-facing MCP payloads."""
+    """Base model for server-facing MCP payloads.
+
+    Unset optional fields are dropped on serialization so a result carries
+    only the keys that mean something to the caller.
+    """
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_serializer(mode="wrap")
+    def _serialize_without_nulls(self, handler):  # type: ignore[no-untyped-def]
+        return {key: value for key, value in handler(self).items() if value is not None}
+
+
+class Overflow(MCPBase):
+    """Row-cap overflow signal shared by the capped result models."""
+
+    truncated: bool | None = Field(
+        default=None,
+        description=(
+            "Whether the result set was truncated due to the enforced row limit."
+        ),
+    )
+    row_limit: int | None = Field(
+        default=None,
+        description="The enforced maximum number of rows returned for this query.",
+    )
 
 
 class Profile(MCPBase):
@@ -25,20 +48,7 @@ class Profile(MCPBase):
     )
 
 
-class TabularResult(MCPBase):
-    """Generic tabular result with ordered columns and aligned row values."""
-
-    columns: list[str] = Field(
-        description=(
-            "Ordered list of column names. Each row aligns with these names by index."
-        )
-    )
-    rows: list[list[Any]] = Field(
-        description="Row values aligned with the columns list."
-    )
-
-
-class QueryResult(MCPBase):
+class QueryResult(Overflow):
     """Result of an interactive read-only SQL query (CSV format)."""
 
     data: str = Field(
@@ -47,24 +57,9 @@ class QueryResult(MCPBase):
         )
     )
     row_count: int = Field(description="Number of data rows in the result.")
-    truncated: bool | None = Field(
-        default=None,
-        description=(
-            "Whether the result set was truncated due to the enforced row limit."
-        ),
-    )
-    row_limit: int | None = Field(
-        default=None,
-        description="The enforced maximum number of rows returned for this query.",
-    )
-
-    @model_serializer(mode="wrap")
-    def _serialize_without_nulls(self, handler):  # type: ignore[no-untyped-def]
-        d = handler(self)
-        return {key: value for key, value in d.items() if value is not None}
 
 
-class SnapshotResult(MCPBase):
+class SnapshotResult(Overflow):
     """Result of a snapshot query: CSV persisted to disk, accessible via URI."""
 
     snapshot_uri: str = Field(
@@ -76,42 +71,19 @@ class SnapshotResult(MCPBase):
         )
     )
     row_count: int = Field(description="Number of data rows in the snapshot.")
-    truncated: bool | None = Field(
-        default=None,
+
+
+class ShowResult(Overflow):
+    """Result of a SHOW introspection statement: columns, rows, optional overflow."""
+
+    columns: list[str] = Field(
         description=(
-            "Whether the result set was truncated due to the enforced snapshot row "
-            "limit."
-        ),
+            "Ordered list of column names. Each row aligns with these names by index."
+        )
     )
-    row_limit: int | None = Field(
-        default=None,
-        description="The enforced maximum number of rows for the snapshot query.",
+    rows: list[list[Any]] = Field(
+        description="Row values aligned with the columns list."
     )
-
-    @model_serializer(mode="wrap")
-    def _serialize_without_nulls(self, handler):  # type: ignore[no-untyped-def]
-        d = handler(self)
-        return {key: value for key, value in d.items() if value is not None}
-
-
-class ShowResult(TabularResult):
-    """Result of a SHOW introspection statement (columns + rows + optional truncation)."""  # noqa: E501
-
-    truncated: bool | None = Field(
-        default=None,
-        description=(
-            "Whether the result set was truncated due to the enforced row limit."
-        ),
-    )
-    row_limit: int | None = Field(
-        default=None,
-        description="The enforced maximum number of rows returned for this query.",
-    )
-
-    @model_serializer(mode="wrap")
-    def _serialize_without_nulls(self, handler):  # type: ignore[no-untyped-def]
-        d = handler(self)
-        return {key: value for key, value in d.items() if value is not None}
 
 
 class ExplainResult(MCPBase):
@@ -120,8 +92,3 @@ class ExplainResult(MCPBase):
     plan: str | None = Field(default=None, description="EXPLAIN PLAN output.")
     pipeline: str | None = Field(default=None, description="EXPLAIN PIPELINE output.")
     syntax: str | None = Field(default=None, description="EXPLAIN SYNTAX output.")
-
-    @model_serializer(mode="wrap")
-    def _serialize_without_nulls(self, handler):  # type: ignore[no-untyped-def]
-        data = handler(self)
-        return {key: value for key, value in data.items() if value is not None}

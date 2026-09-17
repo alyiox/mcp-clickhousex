@@ -62,13 +62,6 @@ def _try_delete(path: Path) -> None:
         pass
 
 
-def _try_get_id(path: Path) -> str | None:
-    name = path.name
-    if not name.endswith(_FILE_EXTENSION):
-        return None
-    return name[: -len(_FILE_EXTENSION)]
-
-
 def _load_existing() -> dict[str, str]:
     """Load non-expired snapshots from disk into memory, deleting expired ones."""
     store: dict[str, str] = {}
@@ -83,11 +76,8 @@ def _load_existing() -> dict[str, str]:
             _try_delete(path)
             continue
 
-        snapshot_id = _try_get_id(path)
-        if not snapshot_id:
-            _try_delete(path)
-            continue
-
+        # glob() already matched the extension, so this always yields a name.
+        snapshot_id = path.name[: -len(_FILE_EXTENSION)]
         if not _is_valid_id(snapshot_id):
             # Not a file this store wrote; leave it where it is.
             continue
@@ -122,7 +112,8 @@ def reset_store() -> None:
         _memory_store = None
 
 
-def _to_csv(columns: list[str], rows: list[list[Any]]) -> str:
+def to_csv(columns: list[str], rows: list[list[Any]]) -> str:
+    """Serialize *columns* and *rows* to an RFC 4180 CSV string."""
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(columns)
@@ -134,7 +125,7 @@ def save(columns: list[str], rows: list[list[Any]]) -> str:
     """Persist *columns* and *rows* as a CSV snapshot and return the snapshot ID."""
     _SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     store = _get_store()
-    content = _to_csv(columns, rows)
+    content = to_csv(columns, rows)
 
     while True:
         snapshot_id = uuid.uuid4().hex[:8]
@@ -170,7 +161,7 @@ def fetch(snapshot_id: str) -> str | None:
 
     store = _get_store()
 
-    # Memory hit: serve directly, no expiry re-check (matches C# TryGetAsync).
+    # Memory hit: serve directly, no expiry re-check.
     if snapshot_id in store:
         return store[snapshot_id]
 
