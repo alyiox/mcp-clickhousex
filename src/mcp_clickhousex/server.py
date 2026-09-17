@@ -79,7 +79,8 @@ def run_query(
         Field(
             description=(
                 "Read-only SELECT or WITH … SELECT. One statement; qualify names "
-                "as db.table or set database."
+                "as db.table or set database. Catalog metadata: "
+                "system.databases, system.tables, system.columns."
             ),
         ),
     ],
