@@ -26,7 +26,7 @@ npx -y @modelcontextprotocol/inspector@latest uvx mcp-clickhousex
 ```bash
 # Option 2: Run from source (clone repo, then)
 export MCP_CLICKHOUSE_DSN="http://default:@localhost:8123/default"
-npx -y @modelcontextprotocol/inspector@latest uv run main.py
+npx -y @modelcontextprotocol/inspector@latest uv run mcp-clickhousex
 ```
 
 ## Configuration
