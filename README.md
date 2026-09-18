@@ -7,7 +7,7 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse. Beyond parameterized **SELECT queries** it exposes **`EXPLAIN` analysis** for plan, pipeline and syntax, so an agent can work out *why* a query is slow instead of only running it, and a **snapshot mode** that spills large results to a CSV resource instead of flooding the context. Profile-based configuration serves **multiple clusters** from one deployment.
+A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse. Beyond parameterized **`SELECT` queries** it exposes **`EXPLAIN` analysis** for plan, pipeline and syntax, so an agent can work out *why* a query is slow instead of only running it, and a **snapshot mode** that spills large results to a CSV resource instead of flooding the context. Profile-based configuration serves **multiple clusters** from one deployment.
 
 Read-only is enforced by the engine, not by SQL text matching: every client carries ClickHouse's `readonly=1`, so writes, external table functions and query-level `SETTINGS` are refused by the server being queried. There is no write tool to opt into.
 
@@ -31,36 +31,49 @@ npx -y @modelcontextprotocol/inspector@latest uv run mcp-clickhousex
 
 ## Configuration
 
-All settings use the **MCP_CLICKHOUSE** prefix. **Flat** environment variables (e.g. `MCP_CLICKHOUSE_DSN`) are the straightforward way to configure the **default** profile when you have a single connection. For multiple profiles, the user-scoped `config.json` file is recommended.
+A **profile** is one ClickHouse connection: a DSN plus the row and timeout caps that apply to it. A profile named `default` always exists; every tool takes an optional `profile` to reach another, and `list_profiles` reports what is configured.
 
-**Single connection:** Configure via environment variables.
+Settings come from three sources, merged field by field, later winning:
+
+1. the user-scoped `config.json` — any number of profiles;
+2. `MCP_CLICKHOUSE_PROFILES_<NAME>_<FIELD>` environment variables — any number of profiles;
+3. flat `MCP_CLICKHOUSE_<FIELD>` environment variables — the `default` profile only.
+
+Because the merge is per field rather than per profile, a `config.json` can carry the full set while a flat `MCP_CLICKHOUSE_DSN` repoints the default profile at a local server, leaving its other fields intact. With none of the three present, `default` falls back to `http://default:@localhost:8123/default`.
+
+Each setting has one field name, spelled three ways — `MCP_CLICKHOUSE_<FIELD>`, `MCP_CLICKHOUSE_PROFILES_<NAME>_<FIELD>`, or the field lowercased as a JSON key:
+
+| Field | Default | Hard ceiling |
+|---|---|---|
+| `DSN` | `http://default:@localhost:8123/default` | — |
+| `DESCRIPTION` | none | — |
+| `QUERY_MAX_ROWS` | 500 | 1 000 |
+| `QUERY_COMMAND_TIMEOUT_SECONDS` | 30 | 300 |
+| `SNAPSHOT_MAX_ROWS` | 10 000 | 50 000 |
+| `SNAPSHOT_COMMAND_TIMEOUT_SECONDS` | 120 | 300 |
+
+Caps are per profile. A value above its ceiling is clamped at startup; a value that is not an integer falls back to the default.
+
+**Single connection:** flat environment variables are the shortest path.
 
 ```bash
-# Connection DSN (required).
+# Connection DSN.
 export MCP_CLICKHOUSE_DSN="http://user:password@host:8123/database"
 
 # Optional description for the default profile (tooling/AI discovery).
 export MCP_CLICKHOUSE_DESCRIPTION="Primary cluster"
 
-# Optional max rows per interactive query (default 500; hard ceiling 1000).
+# Optional caps, defaults shown.
 export MCP_CLICKHOUSE_QUERY_MAX_ROWS="500"
-
-# Optional interactive query timeout in seconds (default 30; hard ceiling 300).
 export MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS="30"
-
-# Optional max rows for snapshot queries (default 10000; hard ceiling 50000).
 export MCP_CLICKHOUSE_SNAPSHOT_MAX_ROWS="10000"
-
-# Optional snapshot query timeout in seconds (default 120; hard ceiling 300).
 export MCP_CLICKHOUSE_SNAPSHOT_COMMAND_TIMEOUT_SECONDS="120"
 ```
 
-**Multiple connections:** Use the user-scoped `config.json` file (recommended). Env vars also work via the `MCP_CLICKHOUSE_PROFILES_<NAME>_` prefix (e.g. `MCP_CLICKHOUSE_PROFILES_WAREHOUSE_DSN`).
+**Multiple connections:** use the user-scoped `config.json`, which keeps credentials out of the host's process environment.
 
 - Unix-like: `~/.config/mcp-clickhousex/config.json`
 - Windows: `%USERPROFILE%\.config\mcp-clickhousex\config.json`
-
-Example (`config.json`):
 
 ```json
 {
@@ -81,9 +94,11 @@ Example (`config.json`):
 }
 ```
 
-Values above a hard ceiling are clamped to it at startup.
+Profile names are case-insensitive and must be **alphanumeric** — no underscores or hyphens, since the structured env form splits on `_` (`MCP_CLICKHOUSE_PROFILES_WAREHOUSE_DSN` is profile `warehouse`, field `DSN`). A name that breaks the rule is skipped, as is a `config.json` that is missing, unreadable, or not shaped `{"profiles": {…}}`; the server starts on whatever sources remain rather than failing.
 
-**Special characters in credentials:** A DSN is a URL, so URL-reserved characters in the username or password must be percent-encoded — `#` → `%23`, `?` → `%3F`, `/` → `%2F`, `@` → `%40`, `%` → `%25`. Username `admin@org` with password `p#ss?` becomes `http://admin%40org:p%23ss%3F@host:8123/database`.
+**DSN syntax:** `scheme://user:password@host:port/database`. An `https://` or `clickhouses://` scheme enables TLS, and query-string parameters reach the driver (`?connect_timeout=10`) — except the read-only setting, which the server always applies last.
+
+URL-reserved characters in the username or password must be percent-encoded — `#` → `%23`, `?` → `%3F`, `/` → `%2F`, `@` → `%40`, `%` → `%25`. Username `admin@org` with password `p#ss?` becomes `http://admin%40org:p%23ss%3F@host:8123/database`.
 
 ## Tools and resources
 
