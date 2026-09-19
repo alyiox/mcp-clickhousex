@@ -7,6 +7,25 @@ authors = [
     { name = "Jon X", email = "alyiox@hotmail.com" }
 ]
 requires-python = ">=3.13"
+keywords = [
+    "clickhouse",
+    "database",
+    "mcp",
+    "model-context-protocol",
+    "sql",
+    "query",
+    "metadata",
+    "execution-plan",
+]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+]
 dependencies = [
     "clickhouse-connect>=1.6.0",
     "mcp[cli]>=2.0.0",
