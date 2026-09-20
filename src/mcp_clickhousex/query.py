@@ -13,7 +13,7 @@ from mcp_clickhousex.config import (
     get_snapshot_max_rows,
     get_snapshot_timeout,
 )
-from mcp_clickhousex.models import ExplainResult, QueryResult, SnapshotResult
+from mcp_clickhousex.models import ExplainResult, QueryResult
 from mcp_clickhousex.snapshots import to_csv
 from mcp_clickhousex.validation import validate_explain_target, validate_read_only
 
@@ -65,7 +65,7 @@ def run_query(
     database: str | None = None,
     profile: str | None = None,
     snapshot: bool = False,
-) -> QueryResult | SnapshotResult:
+) -> QueryResult:
     """Execute a read-only SELECT or SHOW statement and return the result.
 
     When *snapshot* is ``False`` (default), returns ``{data, row_count}``
@@ -92,7 +92,7 @@ def run_query(
 
     if snapshot:
         snapshot_id = snapshots.save(columns, rows)
-        return SnapshotResult(
+        return QueryResult(
             snapshot_uri=f"chx://snapshots/{snapshot_id}",
             row_count=len(rows),
             **overflow,

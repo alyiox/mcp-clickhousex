@@ -72,10 +72,11 @@ class TestToolMetadata:
     async def test_output_schemas_match_typed_models(self, client) -> None:
         by_name = {t.name: t for t in (await client.list_tools()).tools}
 
-        # run_query returns QueryResult | SnapshotResult (anyOf union via $defs)
-        defs = by_name["run_query"].output_schema["$defs"]
-        assert "data" in defs["QueryResult"]["properties"]
-        assert "snapshot_uri" in defs["SnapshotResult"]["properties"]
+        # One QueryResult carries both modes, so the schema is flat: no
+        # anyOf union, no $defs indirection.
+        query_schema = by_name["run_query"].output_schema
+        assert "$defs" not in query_schema
+        assert {"data", "snapshot_uri"} <= set(query_schema["properties"])
 
         analyze_props = by_name["analyze_query"].output_schema["properties"]
         assert set(analyze_props) == {"plan", "pipeline", "syntax"}

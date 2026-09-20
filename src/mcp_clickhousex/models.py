@@ -47,28 +47,29 @@ class Profile(MCPBase):
 
 
 class QueryResult(Overflow):
-    """Result of an interactive read-only SQL query (CSV format)."""
+    """Result of a read-only SQL query, inline as CSV or spilled to a resource.
 
-    data: str = Field(
+    Exactly one of *data* and *snapshot_uri* is set, decided by the call's
+    ``snapshot`` flag; the other is dropped on serialization.
+    """
+
+    data: str | None = Field(
+        default=None,
         description=(
-            "RFC 4180 CSV string: first row is the header, remaining rows are data."
-        )
+            "RFC 4180 CSV string: first row is the header, remaining rows are "
+            "data. Absent when the result was spilled to snapshot_uri."
+        ),
     )
-    row_count: int = Field(description="Number of data rows in the result.")
-
-
-class SnapshotResult(Overflow):
-    """Result of a snapshot query: CSV persisted to disk, accessible via URI."""
-
-    snapshot_uri: str = Field(
+    snapshot_uri: str | None = Field(
+        default=None,
         description=(
             "MCP resource URI for the snapshot CSV "
             "(e.g. ``chx://snapshots/{id}``). "
             f"Fetch it via the snapshot resource. Entries expire after "
-            f"{TTL_DESCRIPTION}."
-        )
+            f"{TTL_DESCRIPTION}. Absent when rows were returned inline."
+        ),
     )
-    row_count: int = Field(description="Number of data rows in the snapshot.")
+    row_count: int = Field(description="Number of data rows in the result.")
 
 
 class ExplainResult(MCPBase):

@@ -108,6 +108,15 @@ class TestRunQuery:
         assert headers == ["id", "name"]
         assert rows[0] == ["1", "alice"]
 
+    def test_modes_are_mutually_exclusive(self) -> None:
+        # One model carries both modes, so the unused key must be dropped
+        # rather than serialized as null.
+        inline = _result_dict(run_query("SELECT 1 AS n"))
+        assert "data" in inline and "snapshot_uri" not in inline
+
+        spilled = _result_dict(run_query("SELECT 1 AS n", snapshot=True))
+        assert "snapshot_uri" in spilled and "data" not in spilled
+
     def test_snapshot_uses_the_larger_cap(self, set_limits) -> None:
         set_limits(query_max_rows=2, snapshot_max_rows=10)
         sql = "SELECT number AS n FROM system.numbers LIMIT 8"

@@ -201,7 +201,7 @@ class TestTtlDescription:
         assert snap_module.TTL_DESCRIPTION == f"{_SNAPSHOT_TTL.days} days"
 
     def test_tool_and_resource_metadata_use_it(self) -> None:
-        from mcp_clickhousex.models import SnapshotResult
+        from mcp_clickhousex.models import QueryResult
 
-        described = SnapshotResult.model_fields["snapshot_uri"].description or ""
+        described = QueryResult.model_fields["snapshot_uri"].description or ""
         assert snap_module.TTL_DESCRIPTION in described

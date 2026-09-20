@@ -12,12 +12,7 @@ from pydantic import Field
 
 from mcp_clickhousex import query, snapshots
 from mcp_clickhousex.config import get_profiles
-from mcp_clickhousex.models import (
-    ExplainResult,
-    Profile,
-    QueryResult,
-    SnapshotResult,
-)
+from mcp_clickhousex.models import ExplainResult, Profile, QueryResult
 
 mcp = MCPServer("mcp-clickhousex")
 
@@ -89,7 +84,7 @@ def run_query(
             ),
         ),
     ] = False,
-) -> QueryResult | SnapshotResult:
+) -> QueryResult:
     """[ClickHouse] Execute read-only SELECT or SHOW."""
     return query.run_query(
         sql,
