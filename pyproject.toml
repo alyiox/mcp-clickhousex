@@ -27,8 +27,8 @@ classifiers = [
     "Topic :: Database",
 ]
 dependencies = [
-    "clickhouse-connect>=1.6.0",
-    "mcp[cli]>=2.0.0",
+    "clickhouse-connect>=1.8.0",
+    "mcp[cli]>=2.2.0",
 ]
 
 [project.optional-dependencies]
