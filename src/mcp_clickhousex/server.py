@@ -75,15 +75,7 @@ def list_profiles() -> list[Profile]:
 def run_query(
     sql: Annotated[
         str,
-        Field(
-            description=(
-                "Read-only SELECT (CTEs allowed) or SHOW. One statement; "
-                "qualify names as db.table or set database. Catalog metadata: "
-                "system.databases, system.tables, system.columns. DDL "
-                "(codecs, TTLs, full column list): SHOW CREATE TABLE. "
-                "No INTO OUTFILE."
-            ),
-        ),
+        Field(description="One read-only statement: SELECT, WITH or SHOW."),
     ],
     parameters: _SQL_PARAMETERS = None,
     database: _DATABASE = None,
@@ -92,10 +84,8 @@ def run_query(
         bool,
         Field(
             description=(
-                "Persist the full result to a CSV resource (chx://snapshots/{id}) "
-                "instead of returning rows inline. Use when the result may exceed "
-                "the interactive cap of 1 000 rows; raises the cap to 10 000 "
-                f"(ceiling 50 000). Expires after {snapshots.TTL_DESCRIPTION}."
+                "Spill the result to a CSV resource under a larger row cap, "
+                "instead of returning rows inline."
             ),
         ),
     ] = False,
@@ -115,7 +105,7 @@ def analyze_query(
     sql: Annotated[
         str,
         Field(
-            description="Read-only SELECT, CTEs allowed, to EXPLAIN. One statement.",
+            description="Read-only SELECT to EXPLAIN. One statement.",
         ),
     ],
     parameters: _SQL_PARAMETERS = None,
