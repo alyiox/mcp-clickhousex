@@ -16,7 +16,6 @@ from mcp_clickhousex.models import (
     ExplainResult,
     Profile,
     QueryResult,
-    ShowResult,
     SnapshotResult,
 )
 
@@ -78,9 +77,11 @@ def run_query(
         str,
         Field(
             description=(
-                "Read-only SELECT, CTEs allowed. One statement; qualify names "
-                "as db.table or set database. Catalog metadata: "
-                "system.databases, system.tables, system.columns."
+                "Read-only SELECT (CTEs allowed) or SHOW. One statement; "
+                "qualify names as db.table or set database. Catalog metadata: "
+                "system.databases, system.tables, system.columns. DDL "
+                "(codecs, TTLs, full column list): SHOW CREATE TABLE. "
+                "No INTO OUTFILE."
             ),
         ),
     ],
@@ -99,35 +100,13 @@ def run_query(
         ),
     ] = False,
 ) -> QueryResult | SnapshotResult:
-    """[ClickHouse] Execute read-only SELECT."""
+    """[ClickHouse] Execute read-only SELECT or SHOW."""
     return query.run_query(
         sql,
         parameters=parameters,
         database=database,
         profile=profile,
         snapshot=snapshot,
-    )
-
-
-@mcp.tool(annotations=_READ_ONLY_CLOSED, structured_output=True)
-def run_show(
-    sql: Annotated[
-        str,
-        Field(
-            description=(
-                "One SHOW statement (e.g. SHOW TABLES FROM db LIKE '%x%', "
-                "SHOW CREATE TABLE). Filter with LIKE/ILIKE to stay under the "
-                "row cap. No INTO OUTFILE."
-            ),
-        ),
-    ],
-    parameters: _SQL_PARAMETERS = None,
-    database: _DATABASE = None,
-    profile: _PROFILE = None,
-) -> ShowResult:
-    """[ClickHouse] Execute SHOW introspection statement."""
-    return query.run_show(
-        sql, parameters=parameters, database=database, profile=profile
     )
 
 

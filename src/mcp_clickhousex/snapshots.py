@@ -26,6 +26,10 @@ _FILE_EXTENSION = ".csv"
 # moving the TTL cannot leave a description claiming the old one.
 TTL_DESCRIPTION = f"{_SNAPSHOT_TTL.days} days"
 
+# ClickHouse's own CSV null representation (format_csv_null_representation),
+# so a NULL cell does not read as an empty string.
+NULL_REPRESENTATION = "\\N"
+
 # A snapshot ID is a lookup key, never a path fragment. Ids are minted by
 # save() as uuid4().hex[:8]; anything else is refused before it can reach the
 # filesystem, where "../x" or an absolute path would escape the store.
@@ -113,11 +117,20 @@ def reset_store() -> None:
 
 
 def to_csv(columns: list[str], rows: list[list[Any]]) -> str:
-    """Serialize *columns* and *rows* to an RFC 4180 CSV string."""
+    """Serialize *columns* and *rows* to an RFC 4180 CSV string.
+
+    NULL is written as ``\\N`` so it stays distinct from the empty string,
+    which csv would otherwise render identically. This is ClickHouse's own
+    CSV null representation, so the output matches what the server emits
+    under ``FORMAT CSV``.
+    """
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(columns)
-    writer.writerows(rows)
+    writer.writerows(
+        [NULL_REPRESENTATION if value is None else value for value in row]
+        for row in rows
+    )
     return buf.getvalue()
 
 

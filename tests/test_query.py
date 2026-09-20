@@ -1,4 +1,4 @@
-"""Functional tests for mcp_clickhousex.query (run_query, run_show, analyze_query)."""
+"""Functional tests for mcp_clickhousex.query (run_query, analyze_query)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 
 from mcp_clickhousex import snapshots
 from mcp_clickhousex.config import reset_registry
-from mcp_clickhousex.query import analyze_query, run_query, run_show
+from mcp_clickhousex.query import analyze_query, run_query
 
 pytestmark = pytest.mark.usefixtures("bootstrap_test_db")
 
@@ -115,29 +115,39 @@ class TestRunQuery:
         assert _result_dict(run_query(sql, snapshot=True))["row_count"] == 8
 
 
-class TestRunShow:
+class TestRunQueryShow:
+    """SHOW runs through run_query and returns the same CSV shape as SELECT."""
+
     def test_show_databases(self) -> None:
-        result = _result_dict(run_show("SHOW DATABASES"))
-        names = [row[result["columns"].index("name")] for row in result["rows"]]
-        assert "default" in names
+        result = _result_dict(run_query("SHOW DATABASES"))
+        headers, rows = _parse_csv(result["data"])
+        assert headers == ["name"]
+        assert ["default"] in rows
 
     def test_respects_database_setting(self) -> None:
-        result = _result_dict(run_show("SHOW TABLES", database="system"))
-        names = [row[result["columns"].index("name")] for row in result["rows"]]
+        result = _result_dict(run_query("SHOW TABLES", database="system"))
+        names = [row[0] for row in _parse_csv(result["data"])[1]]
         assert "tables" in names
         assert "numbers" in names
 
-    def test_rejects_non_show(self) -> None:
-        with pytest.raises(ValueError, match="Only SHOW"):
-            run_show("SELECT 1")
+    def test_show_create_table(self) -> None:
+        result = _result_dict(run_query("SHOW CREATE TABLE test_table"))
+        headers, rows = _parse_csv(result["data"])
+        assert headers == ["statement"]
+        assert "CREATE TABLE" in rows[0][0]
 
     def test_truncates_at_max_rows(self, set_limits) -> None:
         set_limits(query_max_rows=2)
-        result = _result_dict(run_show("SHOW TABLES FROM system"))
-        assert result["columns"] == ["name"]
-        assert len(result["rows"]) == 2
+        result = _result_dict(run_query("SHOW TABLES FROM system"))
+        headers, rows = _parse_csv(result["data"])
+        assert headers == ["name"]
+        assert len(rows) == 2
         assert result["truncated"] is True
         assert result["row_limit"] == 2
+
+    def test_snapshot_accepts_show(self) -> None:
+        result = _result_dict(run_query("SHOW DATABASES", snapshot=True))
+        assert result["snapshot_uri"].startswith("chx://snapshots/")
 
 
 class TestAnalyzeQuery:
@@ -165,8 +175,13 @@ class TestAnalyzeQuery:
             analyze_query("SELECT 1", types=["invalid"])
 
     def test_rejects_non_select(self) -> None:
-        with pytest.raises(ValueError, match="read-only"):
+        with pytest.raises(ValueError, match="explained"):
             analyze_query("INSERT INTO test_table VALUES (99, 'bad')")
+
+    def test_rejects_show(self) -> None:
+        # run_query accepts SHOW; EXPLAIN does not take one as a target.
+        with pytest.raises(ValueError, match="explained"):
+            analyze_query("SHOW DATABASES")
 
     def test_database_override(self) -> None:
         result = _result_dict(

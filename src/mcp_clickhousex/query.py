@@ -13,14 +13,9 @@ from mcp_clickhousex.config import (
     get_snapshot_max_rows,
     get_snapshot_timeout,
 )
-from mcp_clickhousex.models import (
-    ExplainResult,
-    QueryResult,
-    ShowResult,
-    SnapshotResult,
-)
+from mcp_clickhousex.models import ExplainResult, QueryResult, SnapshotResult
 from mcp_clickhousex.snapshots import to_csv
-from mcp_clickhousex.validation import validate_read_only, validate_show_statement
+from mcp_clickhousex.validation import validate_explain_target, validate_read_only
 
 _ALLOWED_EXPLAIN_TYPES = frozenset({"plan", "pipeline", "syntax"})
 _DEFAULT_EXPLAIN_TYPES: list[str] = ["plan", "pipeline"]
@@ -71,7 +66,7 @@ def run_query(
     profile: str | None = None,
     snapshot: bool = False,
 ) -> QueryResult | SnapshotResult:
-    """Execute a read-only SELECT and return the result.
+    """Execute a read-only SELECT or SHOW statement and return the result.
 
     When *snapshot* is ``False`` (default), returns ``{data, row_count}``
     where ``data`` is an RFC 4180 CSV string (header + rows).  When it is
@@ -106,32 +101,6 @@ def run_query(
     return QueryResult(data=to_csv(columns, rows), row_count=len(rows), **overflow)
 
 
-def run_show(
-    sql: str,
-    parameters: dict[str, Any] | None = None,
-    database: str | None = None,
-    profile: str | None = None,
-) -> ShowResult:
-    """Execute a SHOW statement and return ``{columns, rows}``.
-
-    Applies the profile's interactive max_rows limit; if the result exceeds
-    it, rows are truncated and ``truncated`` is set to true.
-    """
-    validate_show_statement(sql)
-
-    max_rows = get_max_rows(profile)
-    columns, rows, truncated = _fetch_rows(
-        sql, parameters, database, profile, max_rows, get_command_timeout(profile)
-    )
-
-    return ShowResult(
-        columns=columns,
-        rows=rows,
-        truncated=True if truncated else None,
-        row_limit=max_rows if truncated else None,
-    )
-
-
 def analyze_query(
     sql: str,
     parameters: dict[str, Any] | None = None,
@@ -140,7 +109,7 @@ def analyze_query(
     types: Sequence[str] | None = None,
 ) -> ExplainResult:
     """Run EXPLAIN variants on a read-only SELECT and return text results."""
-    validate_read_only(sql)
+    validate_explain_target(sql)
 
     if not types:
         types = _DEFAULT_EXPLAIN_TYPES

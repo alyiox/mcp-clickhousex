@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from mcp_clickhousex.snapshots import TTL_DESCRIPTION
@@ -71,19 +69,6 @@ class SnapshotResult(Overflow):
         )
     )
     row_count: int = Field(description="Number of data rows in the snapshot.")
-
-
-class ShowResult(Overflow):
-    """Result of a SHOW introspection statement: columns, rows, optional overflow."""
-
-    columns: list[str] = Field(
-        description=(
-            "Ordered list of column names. Each row aligns with these names by index."
-        )
-    )
-    rows: list[list[Any]] = Field(
-        description="Row values aligned with the columns list."
-    )
 
 
 class ExplainResult(MCPBase):

@@ -1,10 +1,10 @@
-"""Read-only SQL validation for MCP query and SHOW tools."""
+"""Read-only SQL validation for the MCP query tools."""
 
 import re
 
-_SELECT_OR_CTE_RE = re.compile(r"^\s*(SELECT|WITH)\s", re.IGNORECASE)
+_SELECT_RE = re.compile(r"^\s*(SELECT|WITH)\s", re.IGNORECASE)
 
-_SHOW_RE = re.compile(r"^\s*SHOW\s", re.IGNORECASE)
+_SELECT_OR_SHOW_RE = re.compile(r"^\s*(SELECT|WITH|SHOW)\s", re.IGNORECASE)
 
 _INTO_OUTFILE_RE = re.compile(r"\bINTO\s+OUTFILE\b", re.IGNORECASE)
 
@@ -34,23 +34,36 @@ def _single_statement(sql: str) -> str:
     return stripped
 
 
-def validate_read_only(sql: str) -> None:
-    """Ensure *sql* is a single, read-only SELECT (or WITH … SELECT).
+def _validate(sql: str, opening: re.Pattern[str], rejection: str) -> None:
+    """Ensure *sql* is one statement opening with *opening* and no INTO OUTFILE.
 
-    Anything not opening with SELECT or WITH is refused here; ClickHouse's
-    readonly=1 is what actually refuses writes on the wire, including the
-    ``WITH … INSERT`` form this prefix check admits.
+    Only the opening keyword is checked; ClickHouse's readonly=1 is what
+    actually refuses writes on the wire, including the ``WITH … INSERT``
+    form this prefix check admits. INTO OUTFILE is rejected up front so the
+    error names the clause rather than surfacing a driver fault.
     """
-    if not _SELECT_OR_CTE_RE.search(_single_statement(sql)):
-        raise ValueError("Only read-only SELECT queries are allowed.")
-
-
-def validate_show_statement(sql: str) -> None:
-    """Ensure *sql* is a single SHOW statement without INTO OUTFILE."""
     stripped = _single_statement(sql)
 
     if _INTO_OUTFILE_RE.search(_blank_quoted(stripped)):
         raise ValueError("INTO OUTFILE is not allowed.")
 
-    if not _SHOW_RE.search(stripped):
-        raise ValueError("Only SHOW statements are allowed.")
+    if not opening.search(stripped):
+        raise ValueError(rejection)
+
+
+def validate_read_only(sql: str) -> None:
+    """Ensure *sql* is a single read-only SELECT, WITH … SELECT or SHOW."""
+    _validate(
+        sql,
+        _SELECT_OR_SHOW_RE,
+        "Only read-only SELECT and SHOW statements are allowed.",
+    )
+
+
+def validate_explain_target(sql: str) -> None:
+    """Ensure *sql* is a single SELECT or WITH … SELECT, as EXPLAIN requires.
+
+    Narrower than :func:`validate_read_only`: SHOW is read-only but is not
+    an EXPLAIN target.
+    """
+    _validate(sql, _SELECT_RE, "Only read-only SELECT queries can be explained.")

@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 import mcp_clickhousex.snapshots as snap_module
-from mcp_clickhousex.snapshots import _SNAPSHOT_TTL, fetch, save
+from mcp_clickhousex.snapshots import _SNAPSHOT_TTL, fetch, save, to_csv
 
 
 @pytest.fixture(autouse=True)
@@ -35,6 +35,18 @@ def _backdate(path, delta: timedelta) -> None:
     """Set file mtime to now - delta."""
     old_ts = (datetime.now(UTC) - delta).timestamp()
     os.utime(path, (old_ts, old_ts))
+
+
+class TestToCsv:
+    """NULL must stay distinguishable from the empty string."""
+
+    def test_null_and_empty_string_differ(self) -> None:
+        data = to_csv(["default", "extra"], [[None, ""]])
+        assert data == "default,extra\r\n\\N,\r\n"
+
+    def test_values_without_nulls_are_unquoted(self) -> None:
+        # The \N sentinel must not drag quoting onto ordinary rows.
+        assert to_csv(["a", "b"], [[1, "x"]]) == "a,b\r\n1,x\r\n"
 
 
 class TestSave:

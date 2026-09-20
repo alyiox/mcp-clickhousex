@@ -109,15 +109,16 @@ All tools accept an optional `profile`; when omitted, the default profile is use
 | Tool | Description | Key params |
 |---|---|---|
 | **`list_profiles`** | List configured connection profiles. Call first when picking a non-default profile. | — |
-| **`run_query`** | Execute read-only `SELECT` (CTEs allowed), one statement per call. Returns rows inline as CSV, or a `chx://snapshots/{id}` URI when `snapshot=true`. Inline limit: 500 rows (hard ceiling 1 000). Snapshot limit: 10 000 rows (hard ceiling 50 000). | `sql`, `parameters`, `database`, `profile`, `snapshot` |
-| **`run_show`** | Execute one `SHOW` statement — chiefly `SHOW CREATE TABLE`/`VIEW`/`DICTIONARY` for DDL a listing cannot give you: codecs, TTLs, the full column list. No `INTO OUTFILE`. | `sql`, `parameters`, `database`, `profile` |
-| **`analyze_query`** | `EXPLAIN` a read-only `SELECT`; returns plan, pipeline or syntax, no result rows. | `sql`, `parameters`, `database`, `profile`, `types` |
+| **`run_query`** | Execute one read-only `SELECT` (CTEs allowed) or `SHOW` statement. Returns rows inline as CSV, or a `chx://snapshots/{id}` URI when `snapshot=true`. Inline limit: 500 rows (hard ceiling 1 000). Snapshot limit: 10 000 rows (hard ceiling 50 000). No `INTO OUTFILE`. | `sql`, `parameters`, `database`, `profile`, `snapshot` |
+| **`analyze_query`** | `EXPLAIN` a read-only `SELECT`; returns plan, pipeline or syntax, no result rows. `SHOW` is not an `EXPLAIN` target. | `sql`, `parameters`, `database`, `profile`, `types` |
 
 - **`types`** — `EXPLAIN` variants: `plan` (indexes), `pipeline`, `syntax`. Defaults to `plan` and `pipeline`.
 - **`parameters`** — Named parameters for driver placeholders, `%(name)s` or `{name:Type}`.
 - **`database`** — Session default database for unqualified names; otherwise qualify as `db.table`.
 
-Catalog discovery has no dedicated tool: list databases, tables and columns — and read sizes (`total_rows`, `total_bytes`) and keys (`primary_key`, `sorting_key`, `partition_key`) — with `run_query` over `system.databases`, `system.tables` and `system.columns`, which take ordinary `WHERE` predicates where `SHOW` takes only `LIKE`.
+Catalog discovery has no dedicated tool: list databases, tables and columns — and read sizes (`total_rows`, `total_bytes`) and keys (`primary_key`, `sorting_key`, `partition_key`) — with `run_query` over `system.databases`, `system.tables` and `system.columns`, which take ordinary `WHERE` predicates where `SHOW` takes only `LIKE`. `SHOW` earns its place for DDL a listing cannot give you — `SHOW CREATE TABLE`/`VIEW`/`DICTIONARY` for codecs, TTLs and the full column list.
+
+Results are RFC 4180 CSV: the first row is the header, the rest are data. `NULL` is written as `\N`, ClickHouse's own CSV null representation, so it stays distinct from the empty string.
 
 A plan's `Indexes` section is not authoritative about a table's keys: it names only the key columns the query used, so a query that skips the leading key column reports a shorter key than the table has. Confirm from `system.tables`, which answers in a few dozen tokens where `SHOW CREATE TABLE` spends several hundred to say the same thing.
 
@@ -140,7 +141,7 @@ Every client this server opens carries ClickHouse's own **`readonly=1`**, so the
 
 `readonly=2` is deliberately not used: it permits `SETTINGS` changes, which would make those caps advisory. The tradeoff is that benign per-query tuning (`SETTINGS max_threads = …`) is refused too.
 
-On top of that, `run_query` accepts `SELECT` / `WITH … SELECT` and `run_show` a single `SHOW`, one statement per call. Interactive queries enforce a tight row cap (default 500, hard ceiling 1 000); for larger extracts use `snapshot=true` (default 10 000, hard ceiling 50 000). Use environment variables or the config file for connection credentials — never commit secrets.
+On top of that, `run_query` accepts `SELECT` / `WITH … SELECT` / `SHOW` and `analyze_query` only the first two, one statement per call. Interactive queries enforce a tight row cap (default 500, hard ceiling 1 000); for larger extracts use `snapshot=true` (default 10 000, hard ceiling 50 000). Use environment variables or the config file for connection credentials — never commit secrets.
 
 ## MCP host examples
 

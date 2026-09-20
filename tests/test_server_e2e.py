@@ -11,7 +11,7 @@ from mcp_clickhousex.server import mcp
 
 pytestmark = pytest.mark.usefixtures("bootstrap_test_db")
 
-TOOL_NAMES = {"list_profiles", "run_query", "run_show", "analyze_query"}
+TOOL_NAMES = {"list_profiles", "run_query", "analyze_query"}
 
 
 @pytest.fixture()
@@ -77,10 +77,6 @@ class TestToolMetadata:
         assert "data" in defs["QueryResult"]["properties"]
         assert "snapshot_uri" in defs["SnapshotResult"]["properties"]
 
-        show_props = by_name["run_show"].output_schema["properties"]
-        assert show_props["columns"]["type"] == "array"
-        assert show_props["rows"]["type"] == "array"
-
         analyze_props = by_name["analyze_query"].output_schema["properties"]
         assert set(analyze_props) == {"plan", "pipeline", "syntax"}
 
@@ -91,7 +87,6 @@ class TestToolMetadata:
         calls = {
             "list_profiles": {},
             "run_query": {"sql": "SELECT 1 AS n"},
-            "run_show": {"sql": "SHOW DATABASES"},
             "analyze_query": {"sql": "SELECT 1 AS n"},
         }
         for tool in (await client.list_tools()).tools:
@@ -146,6 +141,14 @@ class TestRunQueryE2E:
         assert data["row_count"] == 3
 
     @pytest.mark.anyio
+    async def test_show_over_the_wire(self, client) -> None:
+        result = await client.call_tool("run_query", {"sql": "SHOW DATABASES"})
+        assert not result.is_error
+        headers, rows = _parse_query_csv(_parse_text(result))
+        assert headers == ["name"]
+        assert ["default"] in rows
+
+    @pytest.mark.anyio
     async def test_validation_error_surfaces_as_tool_error(self, client) -> None:
         result = await client.call_tool(
             "run_query", {"sql": "INSERT INTO test_table VALUES (99, 'bad')"}
@@ -153,22 +156,7 @@ class TestRunQueryE2E:
         assert result.is_error
 
 
-# -- run_show / analyze_query --------------------------------------------------
-
-
-class TestRunShowE2E:
-    @pytest.mark.anyio
-    async def test_show_databases(self, client) -> None:
-        result = await client.call_tool("run_show", {"sql": "SHOW DATABASES"})
-        assert not result.is_error
-        data = _parse_text(result)
-        names = [row[data["columns"].index("name")] for row in data["rows"]]
-        assert "default" in names
-
-    @pytest.mark.anyio
-    async def test_rejects_select(self, client) -> None:
-        result = await client.call_tool("run_show", {"sql": "SELECT 1"})
-        assert result.is_error
+# -- analyze_query -------------------------------------------------------------
 
 
 class TestAnalyzeQueryE2E:
@@ -182,6 +170,11 @@ class TestAnalyzeQueryE2E:
         data = _parse_text(result)
         assert set(data) == {"syntax"}
         assert "SELECT" in data["syntax"]
+
+    @pytest.mark.anyio
+    async def test_rejects_show(self, client) -> None:
+        result = await client.call_tool("analyze_query", {"sql": "SHOW DATABASES"})
+        assert result.is_error
 
     @pytest.mark.anyio
     async def test_rejects_invalid_type(self, client) -> None:
