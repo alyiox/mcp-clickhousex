@@ -7,7 +7,7 @@
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A read-only-by-default [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse with schema discovery, parameterized SELECT **queries**, execution-plan **analysis**, and **opt-in writes** per profile (coming soon). Profile-based configuration serves **multiple databases and clusters** from one toolset deployment.
+A read-only-by-default [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse that provides schema discovery, read-only **queries**, execution-plan **analysis**, opt-in **writes**, and profile-based access to **multiple servers** from a single toolset deployment.
 
 Read-only is enforced by the engine, not by SQL text matching: every client carries ClickHouse's `readonly=1`, so writes, external table functions and query-level `SETTINGS` are refused by the server being queried. There is no write tool to opt into.
 
