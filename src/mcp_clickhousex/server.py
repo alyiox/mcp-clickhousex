@@ -14,7 +14,11 @@ from mcp_clickhousex import command, query, snapshots
 from mcp_clickhousex.config import any_profile_allows_write, get_profiles
 from mcp_clickhousex.models import CommandResult, ExplainResult, Profile, QueryResult
 
-mcp = MCPServer("mcp-clickhousex")
+mcp = MCPServer(
+    "mcp-clickhousex",
+    title="ClickHouse",
+    version=version("mcp-clickhousex"),
+)
 
 # Every read tool here is read-only: get_client applies ClickHouse's readonly=1,
 # which refuses writes outright. destructive_hint and idempotent_hint stay
