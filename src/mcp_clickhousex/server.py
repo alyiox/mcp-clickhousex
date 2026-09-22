@@ -79,8 +79,8 @@ _WRITE_PROFILE = Annotated[
 
 def main() -> None:
     """CLI entrypoint for ``uvx mcp-clickhousex``."""
-    if "--version" in sys.argv or "-V" in sys.argv:
-        print(version("mcp-clickhousex"))
+    if "--version" in sys.argv[1:] or "-V" in sys.argv[1:]:
+        print(f"mcp-clickhousex {version('mcp-clickhousex')}")
         return
     mcp.run(transport="stdio")
 
