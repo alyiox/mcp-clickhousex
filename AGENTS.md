@@ -40,6 +40,13 @@ characters in generated commit messages.
 
 ---
 
+## Release tags
+
+* Use the bare version as the tag name — **no `v` prefix** (e.g. `0.1.0a4`, not `v0.1.0a4`)
+* Tags must be annotated (`git tag -a`) with a structured release-notes message
+
+---
+
 ## Attribution
 
 Every AI-assisted commit, tag, PR, comment, reply, or message an agent writes
@@ -88,8 +95,13 @@ Follow existing project conventions.
 ## `uv` Workflow Rules
 
 * Use `uv` exclusively for dependency management instead of `pip`
-* Always prefix tool and script invocations with `uv run` so they execute inside the managed environment
+* Always prefix tool and script invocations with `uv run` so they execute inside the managed
+  environment
 * Do not manually create, activate, or delete `.venv` directories
+* Bump the project version with `uv run python scripts/bump_version.py <new-version>` — it drives
+  `uv version` and propagates the result to `server.json`, which carries the version twice; do
+  **not** edit `pyproject.toml` directly
+* Always commit `pyproject.toml`, `uv.lock`, and `server.json` together after a version bump
 
 ---
 
