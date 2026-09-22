@@ -1,4 +1,4 @@
-"""MCP server: ClickHouse metadata discovery and read-only queries."""
+"""MCP server: ClickHouse discovery, read-only queries and opt-in writes."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from mcp_clickhousex import query, snapshots
-from mcp_clickhousex.config import get_profiles
-from mcp_clickhousex.models import ExplainResult, Profile, QueryResult
+from mcp_clickhousex import command, query, snapshots
+from mcp_clickhousex.config import any_profile_allows_write, get_profiles
+from mcp_clickhousex.models import CommandResult, ExplainResult, Profile, QueryResult
 
 mcp = MCPServer("mcp-clickhousex")
 
-# Every tool here is read-only: get_client applies ClickHouse's readonly=1,
+# Every read tool here is read-only: get_client applies ClickHouse's readonly=1,
 # which refuses writes outright. destructive_hint and idempotent_hint stay
 # unset -- both are meaningful only when read_only_hint is false.
 #
@@ -27,6 +27,17 @@ mcp = MCPServer("mcp-clickhousex")
 # structured_output is explicit so a return type the SDK cannot model raises
 # InvalidSignature at import time instead of silently dropping back to text.
 _READ_ONLY_CLOSED = ToolAnnotations(read_only_hint=True, open_world_hint=False)
+
+# run_command inverts every one of those claims. It runs on a client that
+# carries readonly=0, so a statement can destroy data, a repeat can change
+# more, and the external table functions are back -- putting the domain of
+# interaction past what the configured profiles pin down.
+_WRITE_OPEN = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=False,
+    open_world_hint=True,
+)
 
 _SQL_PARAMETERS = Annotated[
     dict[str, Any] | None,
@@ -49,6 +60,16 @@ _DATABASE = Annotated[
 _PROFILE = Annotated[
     str | None,
     Field(description="Profile name; default profile when omitted. Src: profiles."),
+]
+
+_WRITE_PROFILE = Annotated[
+    str | None,
+    Field(
+        description=(
+            "Profile name; must be write-enabled. "
+            "Src: profiles where allow_write is true."
+        ),
+    ),
 ]
 
 
@@ -124,6 +145,51 @@ def analyze_query(
     return query.analyze_query(
         sql, parameters=parameters, database=database, profile=profile, types=types
     )
+
+
+# -- Writes (advertised only where a profile opts in) --------------------------
+
+
+def run_command(
+    sql: Annotated[
+        str,
+        Field(description="One write statement: INSERT, ALTER, CREATE or DROP."),
+    ],
+    parameters: _SQL_PARAMETERS = None,
+    database: _DATABASE = None,
+    profile: _WRITE_PROFILE = None,
+) -> CommandResult:
+    """[ClickHouse] Execute one write statement (DDL/DML).
+
+    Needs a write-enabled profile; refused on read-only ones, the default.
+    There is no transaction to roll back in. For reads use run_query.
+    """
+    return command.run_command(
+        sql, parameters=parameters, database=database, profile=profile
+    )
+
+
+_write_tool_registered = False
+
+
+def _sync_write_tool() -> None:
+    """Advertise run_command only while some profile opts into writes.
+
+    Visibility is a server-wide decision, so a read-only deployment spends
+    no context on the tool and offers no write surface an agent could be
+    talked into; authorization stays per profile, so a call against a locked
+    profile is still refused when it is made.
+    """
+    global _write_tool_registered  # noqa: PLW0603
+    enabled = any_profile_allows_write()
+    if enabled and not _write_tool_registered:
+        mcp.add_tool(run_command, annotations=_WRITE_OPEN, structured_output=True)
+    elif _write_tool_registered and not enabled:
+        mcp.remove_tool("run_command")
+    _write_tool_registered = enabled
+
+
+_sync_write_tool()
 
 
 # -- Resources (one static + one template) ------------------------------------

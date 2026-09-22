@@ -17,6 +17,14 @@ _DEFAULT_DSN = "http://admin:password123@localhost:8123/default"
 
 os.environ["MCP_CLICKHOUSE_DSN"] = os.environ.get(_TEST_DSN_KEY, _DEFAULT_DSN)
 
+# A second profile on the same server, opted into writes. Two profiles rather
+# than one so the suite exercises both halves of the write gate: run_command is
+# advertised because 'writable' opts in, and is still refused against the
+# read-only 'default'.
+WRITE_PROFILE = "writable"
+os.environ["MCP_CLICKHOUSE_PROFILES_WRITABLE_DSN"] = os.environ["MCP_CLICKHOUSE_DSN"]
+os.environ["MCP_CLICKHOUSE_PROFILES_WRITABLE_ALLOW_WRITE"] = "true"
+
 
 @pytest.fixture(autouse=True)
 def _no_user_config_file():

@@ -13,11 +13,15 @@ import pytest
 from mcp_clickhousex.config import (
     DEFAULT_PROFILE_NAME,
     HARD_COMMAND_TIMEOUT_SECONDS,
+    HARD_WRITE_COMMAND_TIMEOUT_SECONDS,
     INTERACTIVE_HARD_ROW_LIMIT,
+    any_profile_allows_write,
     get_client,
     get_command_timeout,
     get_max_rows,
     get_profiles,
+    get_write_client,
+    get_write_timeout,
     reset_registry,
 )
 
@@ -26,6 +30,8 @@ _ALL_FLAT_KEYS = [
     "MCP_CLICKHOUSE_DESCRIPTION",
     "MCP_CLICKHOUSE_QUERY_MAX_ROWS",
     "MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS",
+    "MCP_CLICKHOUSE_ALLOW_WRITE",
+    "MCP_CLICKHOUSE_WRITE_COMMAND_TIMEOUT_SECONDS",
 ]
 
 
@@ -410,3 +416,125 @@ class TestSpecialCharCredentials:
     def test_https_sets_secure(self) -> None:
         kwargs = self._get_client_kwargs("https://user:pass@host:8443/db")
         assert kwargs.get("secure") is True
+
+
+# -- Write opt-in --------------------------------------------------------------
+
+
+class TestAllowWrite:
+    def test_profiles_are_read_only_by_default(self) -> None:
+        with _env({"MCP_CLICKHOUSE_DSN": "http://localhost:8123"}):
+            assert _profile_dicts(get_profiles())[0]["allow_write"] is False
+            assert any_profile_allows_write() is False
+
+    @pytest.mark.parametrize("raw", ["true", "True", "1", "yes", "on"])
+    def test_flat_opt_in_spellings(self, raw: str) -> None:
+        with _env({"MCP_CLICKHOUSE_ALLOW_WRITE": raw}):
+            assert _profile_dicts(get_profiles())[0]["allow_write"] is True
+            assert any_profile_allows_write() is True
+
+    @pytest.mark.parametrize("raw", ["false", "0", "no", "off"])
+    def test_flat_opt_out_spellings(self, raw: str) -> None:
+        with _env({"MCP_CLICKHOUSE_ALLOW_WRITE": raw}):
+            assert _profile_dicts(get_profiles())[0]["allow_write"] is False
+
+    def test_unparseable_value_stays_locked(self) -> None:
+        # A typo must not open writes, and must not stop the server either.
+        with _env({"MCP_CLICKHOUSE_ALLOW_WRITE": "sure"}):
+            assert _profile_dicts(get_profiles())[0]["allow_write"] is False
+
+    def test_structured_opt_in_is_per_profile(self) -> None:
+        with _env(
+            {
+                "MCP_CLICKHOUSE_PROFILES_WAREHOUSE_DSN": "http://wh:8123",
+                "MCP_CLICKHOUSE_PROFILES_WAREHOUSE_ALLOW_WRITE": "true",
+                "MCP_CLICKHOUSE_DSN": "http://localhost:8123",
+            }
+        ):
+            by_name = {p["name"]: p for p in _profile_dicts(get_profiles())}
+            assert by_name["warehouse"]["allow_write"] is True
+            assert by_name[DEFAULT_PROFILE_NAME]["allow_write"] is False
+            # One opted-in profile is enough for the tool to be advertised.
+            assert any_profile_allows_write() is True
+
+    def test_json_boolean_opt_in(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.json"
+        config_path.write_text(
+            """{
+  "profiles": {
+    "warehouse": {"dsn": "http://wh:8123", "allow_write": true}
+  }
+}""",
+            encoding="utf-8",
+        )
+        with patch(
+            "mcp_clickhousex.config._user_config_path", return_value=config_path
+        ):
+            with _env({}):
+                by_name = {p["name"]: p for p in _profile_dicts(get_profiles())}
+                assert by_name["warehouse"]["allow_write"] is True
+
+
+class TestWriteTimeout:
+    def test_defaults_to_sixty_seconds(self) -> None:
+        with _env({"MCP_CLICKHOUSE_DSN": "http://localhost:8123"}):
+            assert get_write_timeout() == 60
+
+    def test_clamped_to_the_write_ceiling(self) -> None:
+        with _env({"MCP_CLICKHOUSE_WRITE_COMMAND_TIMEOUT_SECONDS": "99999"}):
+            assert get_write_timeout() == HARD_WRITE_COMMAND_TIMEOUT_SECONDS
+
+    def test_write_ceiling_outruns_the_interactive_one(self) -> None:
+        # Migrations routinely outlast a bounded interactive query.
+        assert HARD_WRITE_COMMAND_TIMEOUT_SECONDS > HARD_COMMAND_TIMEOUT_SECONDS
+
+    def test_non_integer_falls_back_to_the_default(self) -> None:
+        with _env({"MCP_CLICKHOUSE_WRITE_COMMAND_TIMEOUT_SECONDS": "soon"}):
+            assert get_write_timeout() == 60
+
+
+class TestWriteClient:
+    def _write_client_kwargs(self, overrides: dict[str, str]) -> dict:
+        with _env(overrides):
+            with patch("mcp_clickhousex.config.clickhouse_connect") as mock_cc:
+                mock_cc.get_client.return_value = MagicMock()
+                get_write_client()
+                return mock_cc.get_client.call_args[1]
+
+    def test_locked_profile_is_refused(self) -> None:
+        with _env({"MCP_CLICKHOUSE_DSN": "http://localhost:8123"}):
+            with pytest.raises(PermissionError, match="does not permit writes"):
+                get_write_client()
+
+    def test_opted_in_profile_drops_read_only(self) -> None:
+        kwargs = self._write_client_kwargs(
+            {
+                "MCP_CLICKHOUSE_DSN": "http://user:pass@host:8123/db",
+                "MCP_CLICKHOUSE_ALLOW_WRITE": "true",
+            }
+        )
+        assert kwargs["settings"]["readonly"] == 0
+
+    def test_dsn_cannot_re_impose_read_only(self) -> None:
+        # allow_write is the one switch; a stale readonly= in the DSN must not
+        # make run_command fail as if the server had refused it.
+        kwargs = self._write_client_kwargs(
+            {
+                "MCP_CLICKHOUSE_DSN": "http://user:pass@host:8123/db?readonly=1",
+                "MCP_CLICKHOUSE_ALLOW_WRITE": "true",
+            }
+        )
+        assert kwargs["settings"]["readonly"] == 0
+
+    def test_read_client_stays_read_only_on_a_write_profile(self) -> None:
+        with _env(
+            {
+                "MCP_CLICKHOUSE_DSN": "http://user:pass@host:8123/db",
+                "MCP_CLICKHOUSE_ALLOW_WRITE": "true",
+            }
+        ):
+            with patch("mcp_clickhousex.config.clickhouse_connect") as mock_cc:
+                mock_cc.get_client.return_value = MagicMock()
+                get_client()
+                kwargs = mock_cc.get_client.call_args[1]
+        assert kwargs["settings"]["readonly"] == 1

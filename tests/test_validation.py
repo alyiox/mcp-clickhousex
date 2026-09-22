@@ -2,7 +2,11 @@
 
 import pytest
 
-from mcp_clickhousex.validation import validate_explain_target, validate_read_only
+from mcp_clickhousex.validation import (
+    validate_explain_target,
+    validate_read_only,
+    validate_write,
+)
 
 
 class TestValidateReadOnly:
@@ -140,3 +144,34 @@ class TestValidateExplainTarget:
     def test_write_rejected(self) -> None:
         with pytest.raises(ValueError, match="explained"):
             validate_explain_target("INSERT INTO t VALUES (1)")
+
+
+class TestValidateWrite:
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "INSERT INTO t VALUES (1)",
+            "ALTER TABLE t DELETE WHERE id = 1",
+            "CREATE TABLE t (id UInt32) ENGINE = MergeTree() ORDER BY id",
+            "DROP TABLE t",
+            "OPTIMIZE TABLE t FINAL",
+            # No keyword gate: what a write may do is the profile's call.
+            "SELECT 1",
+        ],
+    )
+    def test_accepts_one_statement(self, sql: str) -> None:
+        validate_write(sql)
+
+    def test_rejects_empty(self) -> None:
+        with pytest.raises(ValueError, match="cannot be empty"):
+            validate_write("   ")
+
+    def test_rejects_multiple_statements(self) -> None:
+        with pytest.raises(ValueError, match="Multiple SQL statements"):
+            validate_write("INSERT INTO t VALUES (1); DROP TABLE t")
+
+    def test_semicolon_inside_a_literal_is_not_a_separator(self) -> None:
+        validate_write("INSERT INTO t VALUES ('a;b')")
+
+    def test_trailing_semicolon_is_stripped(self) -> None:
+        validate_write("DROP TABLE t;")

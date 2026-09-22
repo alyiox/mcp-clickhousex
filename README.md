@@ -9,7 +9,7 @@
 
 A read-only-by-default [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for ClickHouse that provides schema discovery, read-only **queries**, execution-plan **analysis**, opt-in **writes**, and profile-based access to **multiple servers** from a single toolset deployment.
 
-Read-only is enforced by the engine, not by SQL text matching: every client carries ClickHouse's `readonly=1`, so writes, external table functions and query-level `SETTINGS` are refused by the server being queried. There is no write tool to opt into.
+Read-only is enforced by the engine, not by SQL text matching: the query tools' clients carry ClickHouse's `readonly=1`, so writes, external table functions and query-level `SETTINGS` are refused by the server being queried. Writes live behind a separate tool that is not registered at all until a profile asks for it.
 
 **Requirements:** Python 3.13+, a running ClickHouse instance, and connection details via environment variables or a config file.
 
@@ -51,8 +51,10 @@ Each setting has one field name, spelled three ways — `MCP_CLICKHOUSE_<FIELD>`
 | `QUERY_COMMAND_TIMEOUT_SECONDS` | 30 | 300 |
 | `SNAPSHOT_MAX_ROWS` | 10 000 | 50 000 |
 | `SNAPSHOT_COMMAND_TIMEOUT_SECONDS` | 120 | 300 |
+| `ALLOW_WRITE` | `false` | — |
+| `WRITE_COMMAND_TIMEOUT_SECONDS` | 60 | 600 |
 
-Caps are per profile. A value above its ceiling is clamped at startup; a value that is not an integer falls back to the default.
+Caps are per profile. A value above its ceiling is clamped at startup; a value that is not an integer falls back to the default, and a value that is not a boolean leaves `ALLOW_WRITE` off.
 
 **Single connection:** flat environment variables are the shortest path.
 
@@ -68,6 +70,11 @@ export MCP_CLICKHOUSE_QUERY_MAX_ROWS="500"
 export MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS="30"
 export MCP_CLICKHOUSE_SNAPSHOT_MAX_ROWS="10000"
 export MCP_CLICKHOUSE_SNAPSHOT_COMMAND_TIMEOUT_SECONDS="120"
+
+# Optional write access, off by default; also controls whether run_command
+# is advertised at all.
+export MCP_CLICKHOUSE_ALLOW_WRITE="false"
+export MCP_CLICKHOUSE_WRITE_COMMAND_TIMEOUT_SECONDS="60"
 ```
 
 **Multiple connections:** use the user-scoped `config.json`, which keeps credentials out of the host's process environment.
@@ -89,14 +96,22 @@ export MCP_CLICKHOUSE_SNAPSHOT_COMMAND_TIMEOUT_SECONDS="120"
     "warehouse": {
       "dsn": "http://user:pass@warehouse:8123/analytics",
       "description": "Warehouse"
+    },
+    "writer": {
+      "dsn": "http://etl:pass@warehouse:8123/analytics",
+      "description": "Warehouse, write-enabled",
+      "allow_write": true,
+      "write_command_timeout_seconds": 120
     }
   }
 }
 ```
 
+Nothing stops one profile from both reading and writing, but a separate write-enabled profile is the shape worth copying: it gives the writes their own DSN, so the credentials behind them can be scoped to what they actually need while the read profiles stay on a login whose grants stop at `SELECT`.
+
 Profile names are case-insensitive and must be **alphanumeric** — no underscores or hyphens, since the structured env form splits on `_` (`MCP_CLICKHOUSE_PROFILES_WAREHOUSE_DSN` is profile `warehouse`, field `DSN`). A name that breaks the rule is skipped, as is a `config.json` that is missing, unreadable, or not shaped `{"profiles": {…}}`; the server starts on whatever sources remain rather than failing.
 
-**DSN syntax:** `scheme://user:password@host:port/database`. An `https://` or `clickhouses://` scheme enables TLS, and query-string parameters reach the driver (`?connect_timeout=10`) — except the read-only setting, which the server always applies last.
+**DSN syntax:** `scheme://user:password@host:port/database`. An `https://` or `clickhouses://` scheme enables TLS, and query-string parameters reach the driver (`?connect_timeout=10`) — except `readonly`, which the server always applies last, from the profile's `ALLOW_WRITE`.
 
 URL-reserved characters in the username or password must be percent-encoded — `#` → `%23`, `?` → `%3F`, `/` → `%2F`, `@` → `%40`, `%` → `%25`. Username `admin@org` with password `p#ss?` becomes `http://admin%40org:p%23ss%3F@host:8123/database`.
 
@@ -108,9 +123,10 @@ All tools accept an optional `profile`; when omitted, the default profile is use
 
 | Tool | Description | Key params |
 |---|---|---|
-| **`list_profiles`** | List configured connection profiles. Call first when picking a non-default profile. | — |
+| **`list_profiles`** | List configured connection profiles. Call first when picking a non-default profile. Returns `name`, `description` and `allow_write` per profile. | — |
 | **`run_query`** | Execute one read-only `SELECT` (CTEs allowed) or `SHOW` statement. Returns rows inline as CSV, or a `chx://snapshots/{id}` URI when `snapshot=true`. Inline limit: 500 rows (hard ceiling 1 000). Snapshot limit: 10 000 rows (hard ceiling 50 000). No `INTO OUTFILE`. | `sql`, `parameters`, `database`, `profile`, `snapshot` |
 | **`analyze_query`** | `EXPLAIN` a read-only `SELECT`; returns plan, pipeline or syntax, no result rows. `SHOW` is not an `EXPLAIN` target. | `sql`, `parameters`, `database`, `profile`, `types` |
+| **`run_command`** | Execute one write statement (DDL/DML). Advertised only when some profile sets `ALLOW_WRITE` (off by default); still refused at call time when the target `profile` is locked. Returns `written_rows`, `written_bytes` and `query_id`. Marked destructive; intended for human-supervised use. | `sql`, `parameters`, `database`, `profile` |
 
 - **`types`** — `EXPLAIN` variants: `plan` (indexes), `pipeline`, `syntax`. Defaults to `plan` and `pipeline`.
 - **`parameters`** — Named parameters for driver placeholders, `%(name)s` or `{name:Type}`.
@@ -128,7 +144,7 @@ The row caps that applied to a call arrive with its result as `truncated` and `r
 
 | URI | Description |
 |-----|-------------|
-| `chx://profiles` | List configured connection profiles (`application/json`). Same data as `list_profiles`. |
+| `chx://profiles` | List configured connection profiles, including `allow_write` (`application/json`). Same data as `list_profiles`. |
 | `chx://snapshots/{id}` | Fetch a query result snapshot as CSV; `id` comes from the `snapshot_uri` that `run_query` returns. Expires after 7 days. |
 
 ## Security
@@ -141,7 +157,13 @@ Every client this server opens carries ClickHouse's own **`readonly=1`**, so the
 
 `readonly=2` is deliberately not used: it permits `SETTINGS` changes, which would make those caps advisory. The tradeoff is that benign per-query tuning (`SETTINGS max_threads = …`) is refused too.
 
-On top of that, `run_query` accepts `SELECT` / `WITH … SELECT` / `SHOW` and `analyze_query` only the first two, one statement per call. Interactive queries enforce a tight row cap (default 500, hard ceiling 1 000); for larger extracts use `snapshot=true` (default 10 000, hard ceiling 50 000). Use environment variables or the config file for connection credentials — never commit secrets.
+On top of that, `run_query` accepts `SELECT` / `WITH … SELECT` / `SHOW` and `analyze_query` only the first two, one statement per call. Interactive queries enforce a tight row cap (default 500, hard ceiling 1 000); for larger extracts use `snapshot=true` (default 10 000, hard ceiling 50 000).
+
+**Writes are opt-in, and invisible until then.** `run_command` runs on a client carrying `readonly=0`, so it executes arbitrary DDL and DML — and, with `readonly` lifted, the external table functions come back too. Unless at least one configured profile sets `ALLOW_WRITE` (default `false`), the tool is not registered at all: it never appears in `tools/list`, so a read-only deployment spends no context on it and offers no write surface an agent could be talked into. Once any profile opts in, the tool is advertised server-wide and is still refused at call time on profiles that remain locked; `list_profiles` reports `allow_write` per profile so an agent can pick a writable one.
+
+`ALLOW_WRITE` is a soft, application-level guard, **not** a security boundary — it constrains this server, not the database. For a genuine read-only guarantee, connect with a login whose ClickHouse grants stop at `SELECT`, and keep write-enabled profiles pointed at credentials scoped to only what they need. `run_command` carries `destructive` and `openWorld` tool annotations so hosts can gate it behind confirmation, but honoring those annotations is the host's choice. ClickHouse has no transaction to roll back in here: a statement that lands, stays.
+
+Use environment variables or the config file for connection credentials — never commit secrets.
 
 ## MCP host examples
 
@@ -224,6 +246,8 @@ uv run pytest tests/ -v
 ```
 
 The harness locates the instance through `MCP_TEST_CLICKHOUSE_DSN`, falling back to `http://admin:password123@localhost:8123/default`. Set it to point tests at another server without touching your production `MCP_CLICKHOUSE_DSN`.
+
+The suite configures two profiles on that one instance — a read-only `default` and a write-enabled `writable` — so both halves of the write gate are exercised: `run_command` is advertised because a profile opts in, and is still refused against the profile that does not.
 
 ## Contributing
 

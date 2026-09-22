@@ -1,4 +1,4 @@
-"""Read-only SQL validation for the MCP query tools."""
+"""SQL validation for the MCP query and command tools."""
 
 import re
 
@@ -58,6 +58,17 @@ def validate_read_only(sql: str) -> None:
         _SELECT_OR_SHOW_RE,
         "Only read-only SELECT and SHOW statements are allowed.",
     )
+
+
+def validate_write(sql: str) -> None:
+    """Ensure *sql* is a single non-empty statement, whatever it does.
+
+    No keyword gate: what a write may do is decided by the profile's
+    allow_write and by the credentials its DSN carries, not by matching SQL
+    text. The single-statement check stays because ClickHouse's HTTP
+    interface takes one statement anyway and says so less clearly.
+    """
+    _single_statement(sql)
 
 
 def validate_explain_target(sql: str) -> None:

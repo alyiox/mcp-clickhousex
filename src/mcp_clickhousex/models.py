@@ -44,6 +44,10 @@ class Profile(MCPBase):
         default=None,
         description="Human- or agent-facing description of the profile.",
     )
+    allow_write: bool = Field(
+        default=False,
+        description="Whether run_command is permitted on this profile.",
+    )
 
 
 class QueryResult(Overflow):
@@ -70,6 +74,24 @@ class QueryResult(Overflow):
         ),
     )
     row_count: int = Field(description="Number of data rows in the result.")
+
+
+class CommandResult(MCPBase):
+    """Outcome of one write statement executed via ``run_command``.
+
+    ClickHouse answers a write with a summary rather than a row count, so
+    what the statement moved is reported as written rows and bytes; DDL
+    moves neither and reports zero.
+    """
+
+    written_rows: int = Field(description="Rows written by the statement; 0 for DDL.")
+    written_bytes: int = Field(
+        description="Uncompressed bytes written by the statement; 0 for DDL."
+    )
+    query_id: str | None = Field(
+        default=None,
+        description="Server query id; join to system.query_log for detail.",
+    )
 
 
 class ExplainResult(MCPBase):

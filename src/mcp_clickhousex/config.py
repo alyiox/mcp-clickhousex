@@ -12,6 +12,8 @@ Structured (named profiles)::
     MCP_CLICKHOUSE_PROFILES_<NAME>_QUERY_COMMAND_TIMEOUT_SECONDS=60
     MCP_CLICKHOUSE_PROFILES_<NAME>_SNAPSHOT_MAX_ROWS=10000
     MCP_CLICKHOUSE_PROFILES_<NAME>_SNAPSHOT_COMMAND_TIMEOUT_SECONDS=120
+    MCP_CLICKHOUSE_PROFILES_<NAME>_ALLOW_WRITE=false
+    MCP_CLICKHOUSE_PROFILES_<NAME>_WRITE_COMMAND_TIMEOUT_SECONDS=60
 
 Flat (default profile only, backward compatible)::
 
@@ -21,6 +23,8 @@ Flat (default profile only, backward compatible)::
     MCP_CLICKHOUSE_QUERY_COMMAND_TIMEOUT_SECONDS=60
     MCP_CLICKHOUSE_SNAPSHOT_MAX_ROWS=10000
     MCP_CLICKHOUSE_SNAPSHOT_COMMAND_TIMEOUT_SECONDS=120
+    MCP_CLICKHOUSE_ALLOW_WRITE=false
+    MCP_CLICKHOUSE_WRITE_COMMAND_TIMEOUT_SECONDS=60
 
 Flat vars always win over structured vars for the default profile.
 Profile names are case-insensitive and must be alphanumeric (no
@@ -51,15 +55,25 @@ DEFAULT_PROFILE_NAME = "default"
 # and would make those caps advisory, so it is deliberately not used.
 READ_ONLY_SETTINGS: dict[str, Any] = {"readonly": 1}
 
+# The write counterpart, applied the same way for the profiles that opt in via
+# allow_write. Pinned rather than omitted so that flag stays the single switch:
+# a stray readonly= in the DSN cannot turn an opted-in profile back into a
+# read-only one and make run_command look like a server fault.
+WRITE_SETTINGS: dict[str, Any] = {"readonly": 0}
+
 INTERACTIVE_HARD_ROW_LIMIT = 1_000
 SNAPSHOT_HARD_ROW_LIMIT = 50_000
 HARD_COMMAND_TIMEOUT_SECONDS = 300
+# Writes and migrations routinely outrun a bounded interactive query, so the
+# write path gets its own, higher ceiling.
+HARD_WRITE_COMMAND_TIMEOUT_SECONDS = 600
 
 _DEFAULT_DSN = "http://default:@localhost:8123/default"
 _DEFAULT_QUERY_MAX_ROWS = 500
 _DEFAULT_QUERY_COMMAND_TIMEOUT_SECONDS = 30
 _DEFAULT_SNAPSHOT_MAX_ROWS = 10_000
 _DEFAULT_SNAPSHOT_COMMAND_TIMEOUT_SECONDS = 120
+_DEFAULT_WRITE_COMMAND_TIMEOUT_SECONDS = 60
 
 _STRUCTURED_PREFIX = "MCP_CLICKHOUSE_PROFILES_"
 
@@ -72,18 +86,25 @@ _FLAT_MAP: dict[str, str] = {
     "MCP_CLICKHOUSE_SNAPSHOT_COMMAND_TIMEOUT_SECONDS": (
         "snapshot_command_timeout_seconds"
     ),
+    "MCP_CLICKHOUSE_ALLOW_WRITE": "allow_write",
+    "MCP_CLICKHOUSE_WRITE_COMMAND_TIMEOUT_SECONDS": "write_command_timeout_seconds",
 }
 
 _KNOWN_SUFFIXES: tuple[tuple[str, str], ...] = (
     ("SNAPSHOT_COMMAND_TIMEOUT_SECONDS", "snapshot_command_timeout_seconds"),
     ("QUERY_COMMAND_TIMEOUT_SECONDS", "query_command_timeout_seconds"),
+    ("WRITE_COMMAND_TIMEOUT_SECONDS", "write_command_timeout_seconds"),
     ("SNAPSHOT_MAX_ROWS", "snapshot_max_rows"),
     ("QUERY_MAX_ROWS", "query_max_rows"),
+    ("ALLOW_WRITE", "allow_write"),
     ("DESCRIPTION", "description"),
     ("DSN", "dsn"),
 )
 
 _PROFILE_NAME_RE = re.compile(r"^[A-Za-z0-9]+$")
+
+_TRUE_SPELLINGS = frozenset({"1", "true", "yes", "on"})
+_FALSE_SPELLINGS = frozenset({"0", "false", "no", "off"})
 
 
 @dataclass
@@ -94,6 +115,8 @@ class _ProfileData:
     query_command_timeout_seconds: int = _DEFAULT_QUERY_COMMAND_TIMEOUT_SECONDS
     snapshot_max_rows: int = _DEFAULT_SNAPSHOT_MAX_ROWS
     snapshot_command_timeout_seconds: int = _DEFAULT_SNAPSHOT_COMMAND_TIMEOUT_SECONDS
+    allow_write: bool = False
+    write_command_timeout_seconds: int = _DEFAULT_WRITE_COMMAND_TIMEOUT_SECONDS
 
 
 @dataclass
@@ -113,6 +136,8 @@ _JSON_PROFILE_KEYS: tuple[tuple[str, str], ...] = (
     ("query_command_timeout_seconds", "query_command_timeout_seconds"),
     ("snapshot_max_rows", "snapshot_max_rows"),
     ("snapshot_command_timeout_seconds", "snapshot_command_timeout_seconds"),
+    ("allow_write", "allow_write"),
+    ("write_command_timeout_seconds", "write_command_timeout_seconds"),
 )
 
 
@@ -223,6 +248,14 @@ def _materialize(raw: dict[str, str]) -> _ProfileData:
             _DEFAULT_SNAPSHOT_COMMAND_TIMEOUT_SECONDS,
             HARD_COMMAND_TIMEOUT_SECONDS,
         )
+    if "allow_write" in raw:
+        data.allow_write = _parse_bool(raw["allow_write"], data.allow_write)
+    if "write_command_timeout_seconds" in raw:
+        data.write_command_timeout_seconds = _clamp_int(
+            raw["write_command_timeout_seconds"],
+            _DEFAULT_WRITE_COMMAND_TIMEOUT_SECONDS,
+            HARD_WRITE_COMMAND_TIMEOUT_SECONDS,
+        )
     return data
 
 
@@ -231,6 +264,22 @@ def _clamp_int(raw: str, default: int, max_val: int) -> int:
         return min(int(raw), max_val)
     except (ValueError, TypeError):
         return default
+
+
+def _parse_bool(raw: str, default: bool) -> bool:
+    """Read a boolean field; an unrecognised spelling keeps *default*.
+
+    Both JSON booleans and env strings arrive here as text, so ``true``,
+    ``True`` and ``1`` all mean the same thing. Garbage falls back rather
+    than raising, matching :func:`_clamp_int`: a typo must not silently
+    open writes, and it must not stop the server either.
+    """
+    lowered = raw.strip().lower()
+    if lowered in _TRUE_SPELLINGS:
+        return True
+    if lowered in _FALSE_SPELLINGS:
+        return False
+    return default
 
 
 def _resolve_profiles() -> _Registry:
@@ -288,12 +337,21 @@ def _lookup(profile: str | None) -> tuple[str, _ProfileData]:
 
 
 def get_profiles() -> list[Profile]:
-    """Return all configured profiles with name and description."""
+    """Return all configured profiles with name, description and write flag."""
     reg = _get_registry()
     return [
-        Profile(name=name, description=data.description)
+        Profile(name=name, description=data.description, allow_write=data.allow_write)
         for name, data in reg.profiles.items()
     ]
+
+
+def any_profile_allows_write() -> bool:
+    """Whether any configured profile opts into writes.
+
+    Drives whether ``run_command`` is advertised at all; per-profile
+    authorization is still checked at call time by :func:`get_write_client`.
+    """
+    return any(data.allow_write for data in _get_registry().profiles.values())
 
 
 def _parse_dsn(dsn: str) -> dict[str, Any]:
@@ -323,15 +381,34 @@ def _parse_dsn(dsn: str) -> dict[str, Any]:
 
 
 def get_client(profile: str | None = None) -> Client:
-    """Build a ClickHouse client for the given profile.
+    """Build a read-only ClickHouse client for the given profile.
 
     If *profile* is ``None`` or empty the default profile is used.
     """
     _, data = _lookup(profile)
-    dsn = data.dsn or _DEFAULT_DSN
-    kwargs = _parse_dsn(dsn)
+    kwargs = _parse_dsn(data.dsn or _DEFAULT_DSN)
     # Set last so a DSN query parameter cannot weaken the read-only posture.
     kwargs["settings"] = READ_ONLY_SETTINGS
+    return clickhouse_connect.get_client(**kwargs)
+
+
+def get_write_client(profile: str | None = None) -> Client:
+    """Build a write-capable client for a profile that opts into writes.
+
+    Raises ``PermissionError`` for a profile left read-only, which is the
+    default. The flag constrains this server, not the database: a genuine
+    guarantee comes from the credentials the DSN carries.
+    """
+    name, data = _lookup(profile)
+    if not data.allow_write:
+        raise PermissionError(
+            f"MCP ClickHouse profile '{name}' does not permit writes. "
+            "Set allow_write on the profile to use run_command."
+        )
+    kwargs = _parse_dsn(data.dsn or _DEFAULT_DSN)
+    # Set last for the same reason as the read-only path, in the other
+    # direction: allow_write decides, not the DSN.
+    kwargs["settings"] = WRITE_SETTINGS
     return clickhouse_connect.get_client(**kwargs)
 
 
@@ -357,3 +434,9 @@ def get_snapshot_timeout(profile: str | None = None) -> int:
     """Return the snapshot command timeout in seconds for the given profile."""
     _, data = _lookup(profile)
     return data.snapshot_command_timeout_seconds
+
+
+def get_write_timeout(profile: str | None = None) -> int:
+    """Return the write command timeout in seconds for the given profile."""
+    _, data = _lookup(profile)
+    return data.write_command_timeout_seconds
