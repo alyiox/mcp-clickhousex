@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from importlib.metadata import version
 from typing import Annotated, Any, Literal
 
+from clickhouse_connect.driver.exceptions import ClickHouseError
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ResourceError, ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -77,6 +81,23 @@ _WRITE_PROFILE = Annotated[
 ]
 
 
+# The SDK withholds the text of any exception other than ToolError or
+# ResourceError, so the model would see only "Error executing tool <name>".
+# These are the failures the model can act on -- a rejected statement, an
+# unknown or locked profile, and everything ClickHouse itself refused (syntax,
+# ACCESS_DENIED, timeouts) -- so their text is passed through. Anything else is
+# still a crash and stays on the server.
+_ANTICIPATED = (ValueError, PermissionError, ClickHouseError)
+
+
+@contextmanager
+def _tool_errors() -> Iterator[None]:
+    try:
+        yield
+    except _ANTICIPATED as exc:
+        raise ToolError(str(exc)) from exc
+
+
 def main() -> None:
     """CLI entrypoint for ``uvx mcp-clickhousex``."""
     if "--version" in sys.argv[1:] or "-V" in sys.argv[1:]:
@@ -111,13 +132,14 @@ def run_query(
     ] = False,
 ) -> QueryResult:
     """[ClickHouse] Execute read-only SELECT or SHOW."""
-    return query.run_query(
-        sql,
-        parameters=parameters,
-        database=database,
-        profile=profile,
-        snapshot=snapshot,
-    )
+    with _tool_errors():
+        return query.run_query(
+            sql,
+            parameters=parameters,
+            database=database,
+            profile=profile,
+            snapshot=snapshot,
+        )
 
 
 @mcp.tool(annotations=_READ_ONLY_CLOSED, structured_output=True)
@@ -146,9 +168,10 @@ def analyze_query(
     Indexes names only the keys the plan used; confirm absent keys from
     system.tables (primary_key, sorting_key, partition_key).
     """
-    return query.analyze_query(
-        sql, parameters=parameters, database=database, profile=profile, types=types
-    )
+    with _tool_errors():
+        return query.analyze_query(
+            sql, parameters=parameters, database=database, profile=profile, types=types
+        )
 
 
 # -- Writes (advertised only where a profile opts in) --------------------------
@@ -168,9 +191,10 @@ def run_command(
     Needs a write-enabled profile; refused on read-only ones, the default.
     There is no transaction to roll back in. For reads use run_query.
     """
-    return command.run_command(
-        sql, parameters=parameters, database=database, profile=profile
-    )
+    with _tool_errors():
+        return command.run_command(
+            sql, parameters=parameters, database=database, profile=profile
+        )
 
 
 _write_tool_registered = False
@@ -224,7 +248,7 @@ def resource_profiles() -> list[Profile]:
 def resource_snapshot(id: str) -> str:
     csv_data = snapshots.fetch(id)
     if csv_data is None:
-        raise ValueError(
+        raise ResourceError(
             f"Snapshot '{id}' not found or has expired "
             f"(TTL: {snapshots.TTL_DESCRIPTION})."
         )

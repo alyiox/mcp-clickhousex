@@ -31,6 +31,15 @@ def _parse_text(result) -> dict:
     return json.loads(result.content[0].text)
 
 
+def _error_text(result) -> str:
+    """Return the text of an is_error result, asserting it is not the bare
+    "Error executing tool <name>" the SDK sends when it withholds a crash."""
+    assert result.is_error
+    text = result.content[0].text
+    assert ":" in text, text
+    return text
+
+
 def _parse_query_csv(data: dict) -> tuple[list[str], list[list[str]]]:
     """Parse the CSV string from a run_query result dict."""
     rows = list(csv.reader(io.StringIO(data["data"])))
@@ -190,7 +199,23 @@ class TestRunQueryE2E:
         result = await client.call_tool(
             "run_query", {"sql": "INSERT INTO test_table VALUES (99, 'bad')"}
         )
-        assert result.is_error
+        assert "Only read-only SELECT and SHOW" in _error_text(result)
+
+    @pytest.mark.anyio
+    async def test_clickhouse_error_reaches_the_client(self, client) -> None:
+        # A server-side refusal (here UNKNOWN_TABLE; ACCESS_DENIED in the wild)
+        # must carry ClickHouse's own code and text, not a bare tool failure.
+        result = await client.call_tool(
+            "run_query", {"sql": "SELECT * FROM no_such_table_xyz"}
+        )
+        assert "UNKNOWN_TABLE" in _error_text(result)
+
+    @pytest.mark.anyio
+    async def test_unknown_profile_names_the_profile(self, client) -> None:
+        result = await client.call_tool(
+            "run_query", {"sql": "SELECT 1", "profile": "nosuchprofile"}
+        )
+        assert "nosuchprofile" in _error_text(result)
 
 
 # -- analyze_query -------------------------------------------------------------
@@ -218,7 +243,7 @@ class TestAnalyzeQueryE2E:
         result = await client.call_tool(
             "analyze_query", {"sql": "SELECT 1", "types": ["bogus"]}
         )
-        assert result.is_error
+        assert "bogus" in _error_text(result)
 
 
 # -- run_command ---------------------------------------------------------------
@@ -281,7 +306,7 @@ class TestRunCommandE2E:
         result = await client.call_tool(
             WRITE_TOOL_NAME, {"sql": "INSERT INTO test_table VALUES (99, 'nope')"}
         )
-        assert result.is_error
+        assert "does not permit writes" in _error_text(result)
 
     @pytest.mark.anyio
     async def test_rejects_multiple_statements(self, client) -> None:
